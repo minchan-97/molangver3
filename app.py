@@ -162,28 +162,29 @@ with st.sidebar:
                 except Exception as e:
                     st.error(f"옮기기 실패: {e}")
 
-    # 검토 대기 — 0건이어도 자리를 보여준다.
-    # (안 보이면 "기능이 없는 건가"와 "아직 쌓인 게 없는 건가"를 구분할 수 없다)
-    _q, _qerr = [], None
-    try:
-        _q = u.identity.pending_quarantine(20) or []
-    except Exception as e:
-        _qerr = str(e)
+    # 검토 대기 — 검토함이 두 곳이다(대화에서 격리된 사실 + 워커가 찾아온 관측).
+    # 앱이 한 쪽만 읽어서 워커가 격리해도 0으로 보이던 문제를 고쳤다.
+    import review_box
+    _cnt = review_box.counts(sb, u.identity)
+    _q = review_box.pending(sb, u.identity, 20)
     st.markdown("---")
-    st.markdown(f"### 🧪 검토 대기 {len(_q)}")
-    if _qerr:
-        st.caption(f"읽기 실패: {_qerr[:60]}")
-    elif not _q:
+    st.markdown(f"### 🧪 검토 대기 {_cnt['total']}")
+    st.caption(f"대화에서 {_cnt['fact']}건 · 워커가 찾은 것 {_cnt['observation']}건")
+    if not _q:
         st.caption("지금은 없어요. 대화하거나 워커가 돌면 여기에 쌓여요.")
     else:
-        st.caption("몰랑이가 확신하기 전에 사람에게 묻는 것들이에요.")
         for _item in _q[:8]:
             c1, c2, c3 = st.columns([5, 1, 1])
-            c1.caption(f"{_item.get('reason','')} · {str(_item.get('text',''))[:40]}")
-            if c2.button("○", key=f"ok_{_item['id']}", help="맞아요"):
-                u.identity.approve(_item["id"]); st.rerun()
-            if c3.button("×", key=f"no_{_item['id']}", help="아니에요"):
-                u.identity.doubt(_item["id"]); st.rerun()
+            _mark = "💬" if _item["where"] == "fact" else "🔎"
+            c1.caption(f"{_mark} {_item['title']}")
+            c1.caption(f"　{_item['reason']}")
+            if _item.get("url"):
+                c1.caption(f"　{_item['url'][:50]}")
+            _k = f"{_item['where']}_{_item['id']}"
+            if c2.button("○", key=f"ok_{_k}", help="맞아요 / 쓸 만해요"):
+                review_box.approve(sb, u.identity, _item); st.rerun()
+            if c3.button("×", key=f"no_{_k}", help="아니에요"):
+                review_box.reject(sb, u.identity, _item); st.rerun()
 
     st.markdown("---")
     st.caption("처음이면: 몰랑이 사진 → 외형학습 → 표정생성")
