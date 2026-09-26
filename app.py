@@ -245,9 +245,17 @@ with st.sidebar:
                 c1.caption(f"　{_item['url'][:50]}")
             _k = f"{_item['where']}_{_item['id']}"
             if safe(c2.button, "○", key=f"ok_{_k}", help="맞아요 / 쓸 만해요"):
-                review_box.approve(sb, u.identity, _item); st.rerun()
+                _r = review_box.approve(sb, u.identity, _item)
+                if _r.get("ok"):
+                    st.rerun()
+                else:                       # 조용히 실패하면 왜 안 되는지 모른다
+                    st.error(f"승인 실패: {_r.get('error')}")
             if safe(c3.button, "×", key=f"no_{_k}", help="아니에요"):
-                review_box.reject(sb, u.identity, _item); st.rerun()
+                _r = review_box.reject(sb, u.identity, _item)
+                if _r.get("ok"):
+                    st.rerun()
+                else:
+                    st.error(f"거절 실패: {_r.get('error')}")
 
     st.markdown("---")
     st.caption("처음이면: 몰랑이 사진 → 외형학습 → 표정생성")
