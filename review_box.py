@@ -69,7 +69,9 @@ def approve(sb, identity, item) -> dict:
                 {"resolved": "approved"}).eq("id", item["id"]).execute()
             text = (item.get("title") or "").strip()
             if text:
-                identity._reinforce_or_add(text, source="human")
+                # source 는 '어디서 왔나'(user/assistant/search/nudge),
+                # human 은 trust 쪽 값이다. 격리된 것은 대화에서 온 것이므로 user.
+                identity._reinforce_or_add(text, source="user")
                 # 사람이 승인한 것은 바로 확신으로
                 rows = (sb.table("molang_facts").select("id")
                         .eq("text", text).limit(1).execute().data) or []
@@ -112,4 +114,3 @@ def counts(sb, identity) -> dict:
     except Exception:
         pass
     return {"fact": n_fact, "observation": n_obs, "total": n_fact + n_obs}
-
