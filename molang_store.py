@@ -61,6 +61,8 @@ class SupabaseIdentity:
                  recent_episodes: int = 10):
         self.sb = sb
         self.max_facts = max_facts_in_prompt
+        self._recall = None            # 사실 지도 (기억이 많아지면 만든다)
+        self._recall_n = 0
         self.recent_episodes = recent_episodes
 
         self._facts: list[dict] = []
@@ -101,6 +103,7 @@ class SupabaseIdentity:
             self._identity_version = idn.get('version', 1)
 
         # 만료·소멸 제외된 뷰에서만 읽는다
+        self._recall = None            # 사실이 바뀌면 지도를 다시 만든다
         try:
             self._facts = self.sb.table('molang_facts_active') \
                 .select('id,text,norm_key,kind,strength,trust,seen,source,expires_at') \
@@ -156,11 +159,25 @@ class SupabaseIdentity:
 
         import re as _re
         qtok = {w for w in _re.findall(r'[가-힣A-Za-z]{2,}', question or '')}
-        qstem = {w[:2] for w in qtok}        # '좋아하는' ↔ '좋아한다' 를 맞추려면
-                                            # 어미를 떼고 앞 두 글자로 비교해야 한다
+        qstem = {w[:2] for w in qtok}
+
+        # 사실이 많아지면 강도순 상위 N개로는 '지금 필요한 기억'을 놓친다.
+        # 지도(SOM)로 질문에 가까운 것부터 꺼낸다. 적을 땐 그대로 전부.
+        pool = self._facts
+        try:
+            import recall
+            if len(self._facts) >= recall.MIN_FOR_SOM and question:
+                if getattr(self, '_recall', None) is None or \
+                        self._recall_n != len(self._facts):
+                    self._recall = recall.FactRecall(self._facts)
+                    self._recall_n = len(self._facts)
+                pool = self._recall.recall(question, k=self.max_facts)
+        except Exception:
+            pool = self._facts
+
 
         items = []
-        for f in self._facts:
+        for f in pool:
             s = f.get('strength', 0.6)
             if s <= 0.2:
                 continue
