@@ -115,6 +115,16 @@ def reflect(state):
             'rejected': len(state.rejected)}
 
 
+def _where():
+    """예외가 난 마지막 파일·줄 — '어디서 났는지'가 메시지보다 중요할 때가 많다."""
+    import traceback
+    tb = traceback.extract_tb(sys.exc_info()[2])
+    if not tb:
+        return '?'
+    f = tb[-1]
+    return f"{os.path.basename(f.filename)}:{f.lineno} in {f.name}"
+
+
 def main(mode):
     store = OrganismStore()
     store.start_run(mode)
@@ -159,7 +169,8 @@ def main(mode):
                     or out['growth'].get('memory', {}).get('fed'):
                 registry_store.save(store.sb, _reg)
         except Exception as e:
-            out['growth'] = {'error': str(e)}
+            out['growth'] = {'error': str(e)[:200],
+                             'where': _where(), 'type': type(e).__name__}
 
         # 먼저 말 걸기 — 계기가 있을 때만 (없으면 아무 말도 안 한다)
         try:
@@ -170,7 +181,8 @@ def main(mode):
                                api_key=os.environ.get('OPENAI_API_KEY'))
             out['nudge'] = _msg or '계기 없음'
         except Exception as e:
-            out['nudge'] = {'error': str(e)}
+            out['nudge'] = {'error': str(e)[:200],
+                            'where': _where(), 'type': type(e).__name__}
 
         if mode in ('nightly', 'all'):
             cyc = curiosity_cycle(state, store, deep=True)
