@@ -305,8 +305,13 @@ def make_consolidator(client, model: str = "gpt-4o-mini"):
             resp = client.chat.completions.create(
                 model=model,
                 messages=[{"role": "user", "content": (
-                    "대화에서 상대방(사용자)에 대해 오래 기억할 사실을 뽑아줘.\n"
+                    "사용자가 **직접 말한** 내용에서만, 사용자에 대해 오래 기억할 "
+                    "사실을 뽑아줘.\n"
                     "규칙:\n"
+                    "0. 정보의 출처가 '몰랑이의 답변'이면 무조건 fact를 'NONE'으로. "
+                    "몰랑이가 자기 얘기를 한 것(무엇을 공부했는지, 무엇을 상상했는지 등)을 "
+                    "사용자의 사실로 바꾸지 마라. 사용자가 '너 뭐 했어?'라고 물은 턴은 "
+                    "대부분 'NONE'이다.\n"
                     "1. 취향·직업·습관·관계·계획 같은 지속적 사실만.\n"
                     "2. 짧고 명확한 한 문장으로 압축. 예: '찬기는 커피를 좋아한다'\n"
                     "   (수다체 말고 사실만. 인사·잡담이면 fact를 'NONE')\n"
@@ -314,7 +319,8 @@ def make_consolidator(client, model: str = "gpt-4o-mini"):
                     "   (예: 기존 '축구를 좋아한다' vs 새 '축구를 이제 안 본다')\n"
                     "   모순 없으면 conflicts_with는 null.\n\n"
                     f"[기존 기억]\n{known}\n\n"
-                    f"[이번 대화]\n사용자: {question}\n몰랑이: {answer}\n\n"
+                    f"[사용자가 한 말 — 여기서만 사실을 뽑는다]\n{question}\n\n"
+                    f"[몰랑이가 한 답 — 참고만, 여기서 사실을 뽑지 마라]\n{answer}\n\n"
                     'JSON만 출력: {"fact": "...", "conflicts_with": null 또는 "기존사실"}')}],
                 temperature=0, max_tokens=100)
             txt = resp.choices[0].message.content.strip()
@@ -323,3 +329,4 @@ def make_consolidator(client, model: str = "gpt-4o-mini"):
         except Exception:
             return None
     return consolidate_fn
+
