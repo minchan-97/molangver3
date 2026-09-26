@@ -131,9 +131,18 @@ if not st.session_state.get("_nudge_checked"):
             for _w in _waiting:
                 st.session_state.chat.append(("molang", _w["body"], "기쁨"))
             outbox.mark_sent(sb, [_w["id"] for _w in _waiting])
-            # 무엇을 보자고 한 건지 실체를 들고 있는다
+            # 무엇을 보자고 한 건지 실체를 들고 있는다.
+            # new_finding 만 '보여줄 것'이 있다. pending/grew 는 대화로 이어지지 않는다.
+            st.session_state.pop("_offer", None)
             if any(w.get("rule") == "new_finding" for w in _waiting):
                 st.session_state["_offer"] = outbox.latest_finding(sb)
+            elif any(w.get("rule") == "pending" for w in _waiting):
+                st.session_state["_offer"] = {
+                    "topic": "검토 대기",
+                    "title": "왼쪽 사이드바의 🧪 검토 대기 칸",
+                    "text": "내가 찾아왔지만 확실하지 않아 보류해 둔 것들이야. "
+                            "여기서 보여줄 수는 없고, 사이드바에서 ○/× 로 골라주면 돼.",
+                    "url": ""}
     except Exception:
         pass
 
@@ -458,4 +467,3 @@ if msg or photo:
     if photo:
         st.session_state.photo_key += 1   # 업로더 리셋 → 같은 사진 재반응 방지
     st.rerun()
-
