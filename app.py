@@ -97,7 +97,7 @@ if not st.session_state.get("_nudge_checked"):
     st.session_state["_nudge_checked"] = True
     try:
         import outbox
-        _waiting = outbox.pending(sb, 2)
+        _waiting = outbox.pending(sb, 1)   # 한 번에 한 마디만
         if _waiting:
             for _w in _waiting:
                 st.session_state.chat.append(("molang", _w["body"], "기쁨"))
