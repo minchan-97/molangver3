@@ -233,8 +233,11 @@ with st.sidebar:
         _grown = sum(1 for t in u.registry.trees.values()
                      for n in t.nodes if str(n).startswith("grown_"))
         _tmem = sum(len(getattr(t, "memory", [])) for t in u.registry.trees.values())
-        if _grown or _tmem:
-            st.caption(f"🌳 사고 기억 {_tmem}개 · 스스로 늘린 판단 단계 {_grown}개")
+        _used = sum((u.registry.usage_count or {}).values())
+        st.caption(f"🌳 사고 기억 {_tmem}개 · 늘린 판단 단계 {_grown}개 · "
+                   f"트리 사용 {_used}회")
+        if st.session_state.get("_tree_save_error"):
+            st.error(f"트리 저장 실패: {st.session_state['_tree_save_error'][:80]}")
     except Exception:
         pass
 
@@ -466,9 +469,12 @@ if msg or photo:
         u.last_talk_ts = _time.time()   # 시간 동기화용
         try:                     # 대화로 바뀐 판단 구조를 서버에 남긴다
             import registry_store
-            registry_store.save(sb, u.registry)
-        except Exception:
-            pass
+            _rs = registry_store.save(sb, u.registry)
+            if not _rs.get("ok"):
+                # 조용히 실패하면 트리가 영영 안 쌓인다 (실제로 그랬다)
+                st.session_state["_tree_save_error"] = _rs.get("error")
+        except Exception as e:
+            st.session_state["_tree_save_error"] = str(e)[:200]
         # 대화가 관심사로 스며들게 — 여러 번 나온 말만, 작은 가중치로.
         # (한 번 말했다고 바로 파헤치지 않는다. 확신이 천천히 굳는 것과 같은 결)
         try:
