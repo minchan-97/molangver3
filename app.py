@@ -93,8 +93,10 @@ if "unified" not in st.session_state:
 u = st.session_state.unified
 
 
-# 위젯 키를 이 실행 안에서 유일하게 만든다.
-# (같은 블록이 실수로 두 번 들어가도 앱이 통째로 죽지 않게 — 화면만 두 번 보인다)
+# 위젯 키 충돌로 앱이 통째로 죽지 않게 한다.
+# 키를 미리 유일하게 만드는 것만으로는 부족했다(Streamlit 판에 따라
+# 이전 실행의 키가 남아 DuplicateElementKey 가 난다). 그래서 실제로 그려보고,
+# 충돌하면 다른 키로 다시 그린다.
 _USED_KEYS = set()
 
 
@@ -104,6 +106,19 @@ def uk(name: str) -> str:
         k += "_x"
     _USED_KEYS.add(k)
     return k
+
+
+def safe(widget, *args, key: str = None, **kwargs):
+    """위젯을 그린다. 키가 겹치면 키를 바꿔 다시 시도한다."""
+    base = key or ""
+    for suffix in ("", "_b", "_c", "_d"):
+        try:
+            return widget(*args, key=(uk(base + suffix) if base else None),
+                          **kwargs)
+        except Exception as e:
+            if "Duplicate" not in type(e).__name__ and "Duplicate" not in str(e):
+                raise
+    return None
 
 
 # 몰랑이가 먼저 걸어둔 말이 있으면 대화에 얹는다 (자율 발화)
@@ -143,8 +158,8 @@ with st.sidebar:
         if True:
             st.caption(f"지금 표정 {_faces_n}개. pkl 을 올리면 표정과 외형만 꺼내 "
                        "서버에 넣어요. 사실·기억은 건드리지 않아요.")
-            _fup = st.file_uploader("표정이 든 molang.pkl", key=uk("skin_pkl"))
-            if _fup and st.button("표정만 가져오기", key=uk("skin_btn")):
+            _fup = safe(st.file_uploader, "표정이 든 molang.pkl", key="skin_pkl")
+            if _fup and safe(st.button, "표정만 가져오기", key="skin_btn"):
                 try:
                     import skin_store
                     _old = persist.load_molang_bytes(_fup.getvalue())
@@ -168,8 +183,8 @@ with st.sidebar:
                f"· 표정 {len(getattr(u, 'molang_faces', {}) or {})}개")
     with st.expander("📦 예전 몰랑이(pkl) 옮기기", expanded=(_facts_n == 0)):
         if True:
-            up = st.file_uploader("사실이 든 molang.pkl", key=uk("mig_pkl"))
-            if up and st.button("서버로 옮기기", key=uk("mig_btn")):
+            up = safe(st.file_uploader, "사실이 든 molang.pkl", key="mig_pkl")
+            if up and safe(st.button, "서버로 옮기기", key="mig_btn"):
                 try:
                     old = persist.load_molang_bytes(up.getvalue())
                     n = 0
@@ -229,15 +244,16 @@ with st.sidebar:
             if _item.get("url"):
                 c1.caption(f"　{_item['url'][:50]}")
             _k = f"{_item['where']}_{_item['id']}"
-            if c2.button("○", key=f"ok_{_k}", help="맞아요 / 쓸 만해요"):
+            if safe(c2.button, "○", key=f"ok_{_k}", help="맞아요 / 쓸 만해요"):
                 review_box.approve(sb, u.identity, _item); st.rerun()
-            if c3.button("×", key=f"no_{_k}", help="아니에요"):
+            if safe(c3.button, "×", key=f"no_{_k}", help="아니에요"):
                 review_box.reject(sb, u.identity, _item); st.rerun()
 
     st.markdown("---")
     st.caption("처음이면: 몰랑이 사진 → 외형학습 → 표정생성")
-    base_img = st.file_uploader("기본 몰랑이 사진", type=["png","jpg","jpeg","webp","gif","bmp"])
-    if base_img and st.button("① 외형 학습", key=uk("appearance_btn")):
+    base_img = safe(st.file_uploader, "기본 몰랑이 사진", key="base_img",
+                    type=["png","jpg","jpeg","webp","gif","bmp"])
+    if base_img and safe(st.button, "① 외형 학습", key="appearance_btn"):
         with st.spinner("얼굴 익히는 중..."):
             b64 = base64.b64encode(base_img.getvalue()).decode()
             feat = skin.extract_appearance(client, b64, base_img.type)
@@ -247,7 +263,7 @@ with st.sidebar:
                 st.success("외형 기억 완료!")
             else: st.error("실패 (API키 확인)")
 
-    if skin.has_appearance(u) and st.button("② 표정 5종 생성", key=uk("faces_btn")):
+    if skin.has_appearance(u) and safe(st.button, "② 표정 5종 생성", key="faces_btn"):
         prog = st.progress(0.0)
         fails = []
         last_err = None
