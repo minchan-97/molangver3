@@ -34,15 +34,25 @@ def _blob(registry: TreeRegistry) -> bytes:
     })
 
 
-def save(sb, registry: TreeRegistry) -> bool:
-    """트리를 서버에 저장. 실패해도 대화는 계속되게 False 만 돌려준다."""
+def save(sb, registry: TreeRegistry):
+    """
+    트리를 서버에 저장.
+
+    molang_registry.blob 은 bytea 다. REST 로 보낼 때는 base64 가 아니라
+    Postgres 의 hex 표기('\\x' + hex)여야 한다. base64 를 보내면 거부당하는데,
+    예전 판은 그 실패를 조용히 삼켜서 **트리가 한 번도 저장되지 않았다.**
+    (사고유형 사용 횟수가 계속 0이던 원인)
+
+    반환: {"ok": bool, "error": str|None, "bytes": int}
+    """
     try:
-        data = base64.b64encode(_blob(registry)).decode()
+        raw = _blob(registry)
+        data = "\\x" + raw.hex()
         sb.table("molang_registry").upsert(
             {"id": 1, "blob": data}, on_conflict="id").execute()
-        return True
-    except Exception:
-        return False
+        return {"ok": True, "error": None, "bytes": len(raw)}
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:200], "bytes": 0}
 
 
 def load_into(sb, registry: TreeRegistry) -> int:
@@ -86,3 +96,4 @@ def load_into(sb, registry: TreeRegistry) -> int:
     if blob.get("usage_count"):
         registry.usage_count = blob["usage_count"]
     return n
+
