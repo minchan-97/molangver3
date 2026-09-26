@@ -102,6 +102,31 @@ with st.sidebar:
     st.markdown("### 🐰 몰랑이 준비")
 
     # 이제 정체성은 서버(Supabase)에 있다. pkl 은 '처음 한 번 옮기기'에만 쓴다.
+    # 표정만 따로 옮기기 (사실은 이미 옮겼고 얼굴만 없을 때)
+    _faces_n = len(getattr(u, "molang_faces", {}) or {})
+    if _faces_n == 0:
+        with st.expander("🐰 예전 몰랑이 얼굴 가져오기", expanded=True):
+            st.caption("pkl 을 올리면 표정과 외형만 꺼내서 서버에 넣어요. "
+                       "사실·기억은 건드리지 않아요.")
+            _fup = st.file_uploader("molang.pkl", type=None, key="skin_pkl")
+            if _fup and st.button("표정만 가져오기"):
+                try:
+                    import skin_store
+                    _old = persist.load_molang_bytes(_fup.getvalue())
+                    _faces = getattr(_old, "molang_faces", None) or {}
+                    _app = getattr(_old, "molang_appearance", None)
+                    if not _faces and not _app:
+                        st.warning("이 pkl 에는 표정이 없네요.")
+                    else:
+                        u.molang_faces = dict(_faces)
+                        if _app:
+                            u.molang_appearance = _app
+                        _n = skin_store.save_all(sb, u)
+                        st.success(f"표정 {_n}개를 서버에 넣었어요 🐰")
+                        st.rerun()
+                except Exception as e:
+                    st.error(f"가져오기 실패: {e}")
+
     _facts_n = len(u.identity.learned_facts)
     st.caption(f"☁️ 서버 연결됨 · 사실 {_facts_n}개 · 대화 {len(u.identity.episodic)}회 "
                f"· 사고유형 {len(u.registry.trees)}개 "
