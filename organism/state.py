@@ -11,6 +11,7 @@ class OrganismState:
     visited: dict = field(default_factory=dict)
     transition_counts: dict = field(default_factory=dict)
     observations: list = field(default_factory=list)
+    musings: list = field(default_factory=list)   # 조용한 생각의 흔적 (말이 되기 전)
     candidates: list = field(default_factory=list)
     quarantine: list = field(default_factory=list)
     rejected: list = field(default_factory=list)
@@ -24,6 +25,7 @@ class OrganismState:
 
     def trim(self):
         self.observations = self.observations[-1200:]
+        self.musings = (self.musings or [])[-200:]
         self.candidates = self.candidates[-600:]
         self.quarantine = self.quarantine[-400:]
         self.rejected = self.rejected[-300:]
