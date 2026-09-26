@@ -1,167 +1,534 @@
 """
-unified_identity.py — 하나의 정체성 = 유형별 트리 + 정체성 기억.
-
-두 축이 합쳐져 하나의 지속되는 존재가 된다:
-
-  1. TreeRegistry (어떻게 판단하나 — 구조)
-     - 유형별 사고 트리, 재사용·진화
-     - 사고 계보(궤적) = 감사 로그
-
-  2. IdentityMemory (무엇을 믿나/아나 — 내용)
-     - persona(성격), values(가치관), judgment_rules(판단기준)
-     - learned_facts(배운 것), episodic(대화 맥락)
-     - 매 답변에 system_prompt로 강제 주입
-
-결합 원리:
-  질문 → 유형 판별 → 그 유형 트리로 판단 경로 결정 (구조)
-       + 정체성 기억을 프롬프트에 주입 (내용)
-       → 답변
-       → 반응으로 트리 진화 + 기억 흡수
-  둘 다 pkl에 담겨 지속된다.
+몰랑이 💗 — 내부는 Arcogit, 외부만 몰랑이.
+- 내부: UnifiedIdentity (사고계보·자기검증·양심·기억·유형생성이 다 돎)
+- 외부: 몰랑이 껍데기 (표정·말투·카톡 UI)
+- pkl: 다운로드/업로드로 정체성 보관·이어가기
 """
-from __future__ import annotations
-from typing import Optional, Callable
-import pickle
+import os, base64, pickle, io
+import streamlit as st
+from openai import OpenAI
 
-from tree_registry import TreeRegistry
-from thought_structure import ThoughtStructure, JudgmentNode, PathRecord
-from identity_core import IdentityMemory
+from unified_identity import UnifiedIdentity
+from llm_bridge import (make_choose_fn, make_answer_fn, detect_feedback,
+                        make_tree_designer, make_classifier, make_consolidator)
+from tree_registry import load_logic_db_types
+import molang_skin as skin
+import molang_time as mtime
+import molang_self as mself
+import time as _time
+import molang_persist as persist
+
+st.set_page_config(page_title="몰랑이 💗", page_icon="🐰", layout="centered")
+
+# ── Supabase 연결 + 비밀번호 게이트 (어떤 데이터 접근보다 앞) ──
+from supabase import create_client
+import molang_auth
+from molang_store import SupabaseIdentity
+
+@st.cache_resource
+def _sb():
+    return create_client(st.secrets["SUPABASE_URL"],
+                         st.secrets["SUPABASE_SERVICE_KEY"])
+
+sb = _sb()
+molang_auth.gate(sb)          # 통과 못 하면 여기서 멈춤
+
+st.markdown("""
+<style>
+.stApp { background:#b2c7d9; }
+.chat-head { background:#a9bdcf; padding:10px 14px; border-radius:12px;
+  font-weight:700; color:#3d3d3d; margin-bottom:10px;
+  display:flex; align-items:center; gap:10px; }
+.head-pic { width:42px; height:42px; border-radius:50%; object-fit:cover; border:2px solid #fff; }
+.row { display:flex; margin:8px 0; align-items:flex-end; gap:6px; }
+.row.me { justify-content:flex-end; }
+.prof { width:38px; height:38px; border-radius:50%; object-fit:cover; }
+.bubble-you { background:#fff; color:#222; padding:9px 13px;
+  border-radius:4px 16px 16px 16px; max-width:70%; font-size:0.95rem; }
+.bubble-me { background:#fef01b; color:#222; padding:9px 13px;
+  border-radius:16px 4px 16px 16px; max-width:70%; font-size:0.95rem; }
+</style>
+""", unsafe_allow_html=True)
+
+# API 키: secrets 에 있으면 그걸 쓰고, 없을 때만 물어본다
+if "api_key" not in st.session_state:
+    st.session_state.api_key = st.secrets.get("OPENAI_API_KEY", "")
+
+if not st.session_state.api_key:
+    with st.sidebar:
+        st.session_state.api_key = st.text_input(
+            "🔑 OpenAI API 키", type="password", placeholder="sk-...")
+
+if not st.session_state.api_key:
+    st.info("🔑 secrets.toml 에 OPENAI_API_KEY 를 넣어주세요 🐰")
+    st.stop()
+
+client = OpenAI(api_key=st.session_state.api_key)
+
+def dataurl(b64): return f"data:image/png;base64,{b64}"
+
+# ── 정체성(Arcogit) 초기화 ──
+if "unified" not in st.session_state:
+    u = UnifiedIdentity()
+    load_logic_db_types(u.registry)          # 20종 논리 유형 탑재
+    skin.install_molang_persona(u)           # 몰랑이 옷 입힘 (기본값)
+    # 정체성을 서버로. skin 다음에 붙여야 DB의 persona 가 이긴다.
+    u.identity = SupabaseIdentity(sb)
+    # 사고 트리(판단 구조)도 서버에서 복원 — 없으면 기본 유형으로 시작
+    import registry_store, skin_store, purpose
+    _n = registry_store.load_into(sb, u.registry)
+    st.session_state._tree_restored = _n
+    skin.install_molang_persona(u)      # molang_faces 자리 보장
+    skin_store.load_into(sb, u)         # 서버에 있는 얼굴·외형 복원
+    # 목적(왜 사는가)을 정체성 앞에 세운다 — 서버 persona 가 비어 있을 때만
+    try:
+        if not (u.identity.persona or "").strip():
+            u.identity.persona = purpose.to_prompt()
+            u.identity.save_identity()
+    except Exception:
+        pass
+    st.session_state.unified = u
+    st.session_state.chat = [("molang", "안녕! 나 몰랑이야 🐰💗 오늘 어땠어?", "기쁨")]
+
+u = st.session_state.unified
 
 
-class UnifiedIdentity:
-    """유형별 트리 + 정체성 기억 = 하나의 정체성."""
+# 위젯 키 충돌로 앱이 통째로 죽지 않게 한다.
+# 키를 미리 유일하게 만드는 것만으로는 부족했다(Streamlit 판에 따라
+# 이전 실행의 키가 남아 DuplicateElementKey 가 난다). 그래서 실제로 그려보고,
+# 충돌하면 다른 키로 다시 그린다.
+_USED_KEYS = set()
 
-    def __init__(self, registry: Optional[TreeRegistry] = None,
-                 memory: Optional[IdentityMemory] = None):
-        self.registry = registry or TreeRegistry()
-        self.identity = memory or IdentityMemory()
 
-    def think(self, question: str,
-              choose_fn: Optional[Callable] = None,
-              answer_fn: Optional[Callable] = None,
-              classify_fn: Optional[Callable] = None,
-              embed_fn: Optional[Callable] = None,
-              tree_factory: Optional[Callable] = None) -> dict:
-        """
-        하나의 사고 사이클:
-          1. 유형 판별 → 그 유형 트리 재사용/생성
-          2. 정체성 기억을 맥락에 주입
-          3. 트리 위를 이동하며 답 (구조가 답을 통제)
-          4. 결과 반환 (경로=감사, 답변)
-        """
-        # 1. 유형 판별 → 트리 선택 (재사용/생성)
-        type_id = self.registry.classify_type(
-            question, embed_fn=embed_fn, classify_fn=classify_fn)
-        if type_id is None:
-            # 분류 실패 → LLM이 새 사고 유형을 설계 (유형 자동생성)
-            if tree_factory is not None:
+def uk(name: str) -> str:
+    k = name
+    while k in _USED_KEYS:
+        k += "_x"
+    _USED_KEYS.add(k)
+    return k
+
+
+def safe(widget, *args, key: str = None, **kwargs):
+    """위젯을 그린다. 키가 겹치면 키를 바꿔 다시 시도한다."""
+    base = key or ""
+    for suffix in ("", "_b", "_c", "_d"):
+        try:
+            return widget(*args, key=(uk(base + suffix) if base else None),
+                          **kwargs)
+        except Exception as e:
+            if "Duplicate" not in type(e).__name__ and "Duplicate" not in str(e):
+                raise
+    return None
+
+
+# 몰랑이가 먼저 걸어둔 말이 있으면 대화에 얹는다 (자율 발화)
+if not st.session_state.get("_nudge_checked"):
+    st.session_state["_nudge_checked"] = True
+    try:
+        import outbox
+        _waiting = outbox.pending(sb, 1)   # 한 번에 한 마디만
+        if _waiting:
+            for _w in _waiting:
+                st.session_state.chat.append(("molang", _w["body"], "기쁨"))
+            outbox.mark_sent(sb, [_w["id"] for _w in _waiting])
+            # 무엇을 보자고 한 건지 실체를 들고 있는다.
+            # new_finding 만 '보여줄 것'이 있다. pending/grew 는 대화로 이어지지 않는다.
+            st.session_state.pop("_offer", None)
+            if any(w.get("rule") == "new_finding" for w in _waiting):
+                st.session_state["_offer"] = outbox.latest_finding(sb)
+            elif any(w.get("rule") == "pending" for w in _waiting):
+                st.session_state["_offer"] = {
+                    "topic": "검토 대기",
+                    "title": "왼쪽 사이드바의 🧪 검토 대기 칸",
+                    "text": "내가 찾아왔지만 확실하지 않아 보류해 둔 것들이야. "
+                            "여기서 보여줄 수는 없고, 사이드바에서 ○/× 로 골라주면 돼.",
+                    "url": ""}
+    except Exception:
+        pass
+
+# LLM 함수 (Arcogit이 쓰는 것)
+choose_fn = make_choose_fn(client)
+answer_fn = make_answer_fn(client, {})
+designer = make_tree_designer(client)
+classify_fn = make_classifier(client)
+consolidate_fn = make_consolidator(client)
+
+def profile_for(emotion):
+    if skin.has_face(u, emotion): return skin.get_face(u, emotion)
+    if skin.has_face(u, "보통"):  return skin.get_face(u, "보통")
+    return None
+
+# ── 사이드바: 세팅 + pkl 다운/업 ──
+with st.sidebar:
+    st.markdown("### 🐰 몰랑이 준비")
+
+    # 이제 정체성은 서버(Supabase)에 있다. pkl 은 '처음 한 번 옮기기'에만 쓴다.
+    # 표정만 따로 옮기기 (사실은 이미 옮겼고 얼굴만 없을 때)
+    _faces_n = len(getattr(u, "molang_faces", {}) or {})
+    with st.expander("🐰 예전 몰랑이 얼굴 가져오기",
+                     expanded=(_faces_n == 0)):
+        if True:
+            st.caption(f"지금 표정 {_faces_n}개. pkl 을 올리면 표정과 외형만 꺼내 "
+                       "서버에 넣어요. 사실·기억은 건드리지 않아요.")
+            _fup = safe(st.file_uploader, "표정이 든 molang.pkl", key="skin_pkl")
+            if _fup and safe(st.button, "표정만 가져오기", key="skin_btn"):
                 try:
-                    design = tree_factory(question)
-                    new_id = self.registry.create_from_design(
-                        design, question, reason="새 사고 유형 감지")
-                    if new_id:
-                        type_id = new_id
+                    import skin_store
+                    _old = persist.load_molang_bytes(_fup.getvalue())
+                    _faces = getattr(_old, "molang_faces", None) or {}
+                    _app = getattr(_old, "molang_appearance", None)
+                    if not _faces and not _app:
+                        st.warning("이 pkl 에는 표정이 없네요.")
+                    else:
+                        u.molang_faces = dict(_faces)
+                        if _app:
+                            u.molang_appearance = _app
+                        _n = skin_store.save_all(sb, u)
+                        st.success(f"표정 {_n}개를 서버에 넣었어요 🐰")
+                        st.rerun()
+                except Exception as e:
+                    st.error(f"가져오기 실패: {e}")
+
+    _facts_n = len(u.identity.learned_facts)
+    st.caption(f"☁️ 서버 연결됨 · 사실 {_facts_n}개 · 대화 {len(u.identity.episodic)}회 "
+               f"· 사고유형 {len(u.registry.trees)}개 "
+               f"· 표정 {len(getattr(u, 'molang_faces', {}) or {})}개")
+    with st.expander("📦 예전 몰랑이(pkl) 옮기기", expanded=(_facts_n == 0)):
+        st.caption("옛 판 pkl 도 읽어요. 사용자 사실·몰랑이 자기 사실·확인 필요한 "
+                   "대화 원문으로 나눠서 넣습니다.")
+        up = safe(st.file_uploader, "예전 molang.pkl", key="mig_pkl")
+        if up:
+            import legacy_import, skin_store
+            _parsed = legacy_import.read(up.getvalue())
+            if _parsed.get("error"):
+                st.error(_parsed["error"])
+            else:
+                st.caption(
+                    f"사용자 사실 {len(_parsed['user_facts'])} · "
+                    f"몰랑이 자기 사실 {len(_parsed['self_facts'])} · "
+                    f"확인 필요 {len(_parsed['raw_answers'])} · "
+                    f"표정 {len(_parsed['faces'])}개"
+                    + (f" · 대화 {_parsed['talks']}회" if _parsed.get("talks") else ""))
+                _take_p = st.checkbox("말투(페르소나)도 가져오기", value=False,
+                                      key=uk("mig_persona"))
+                if safe(st.button, "서버로 옮기기", key="mig_btn"):
+                    try:
+                        r = legacy_import.apply(sb, u.identity, _parsed,
+                                                take_persona=_take_p)
+                        if _parsed.get("faces"):
+                            u.molang_faces = dict(_parsed["faces"])
+                        if _parsed.get("appearance"):
+                            u.molang_appearance = _parsed["appearance"]
+                        _f = skin_store.save_all(sb, u)
+                        st.success(
+                            f"사실 {r['user_facts']}건, 몰랑이 자기 사실 "
+                            f"{r['self_facts']}건, 표정 {_f}개를 옮겼어요. "
+                            f"확인 필요 {r['quarantined']}건은 검토 대기로 보냈어요.")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"옮기기 실패: {e}")
+
+    # 검토 대기 — 검토함이 두 곳이다(대화에서 격리된 사실 + 워커가 찾아온 관측).
+    # 앱이 한 쪽만 읽어서 워커가 격리해도 0으로 보이던 문제를 고쳤다.
+    import review_box
+    _cnt = review_box.counts(sb, u.identity)
+    _q = review_box.pending(sb, u.identity, 20)
+    # 호기심이 사고 구조를 얼마나 바꿨나
+    try:
+        _grown = sum(1 for t in u.registry.trees.values()
+                     for n in t.nodes if str(n).startswith("grown_"))
+        _tmem = sum(len(getattr(t, "memory", [])) for t in u.registry.trees.values())
+        _used = sum((u.registry.usage_count or {}).values())
+        st.caption(f"🌳 사고 기억 {_tmem}개 · 늘린 판단 단계 {_grown}개 · "
+                   f"트리 사용 {_used}회")
+        if st.session_state.get("_tree_save_error"):
+            st.error(f"트리 저장 실패: {st.session_state['_tree_save_error'][:80]}")
+    except Exception:
+        pass
+
+    _bump = st.session_state.get("_last_bumped")
+    if _bump:
+        st.caption(f"🌱 요즘 관심: {', '.join(_bump[:5])}")
+
+    st.markdown("---")
+    st.markdown(f"### 🧪 검토 대기 {_cnt['total']}")
+    st.caption(f"대화에서 {_cnt['fact']}건 · 워커가 찾은 것 {_cnt['observation']}건")
+    if not _q:
+        st.caption("지금은 없어요. 대화하거나 워커가 돌면 여기에 쌓여요.")
+    else:
+        for _item in _q[:8]:
+            if _item["where"] == "error":       # 읽기 실패는 버튼 없이 알림만
+                st.error(_item["title"])
+                continue
+            c1, c2, c3 = st.columns([5, 1, 1])
+            _mark = "💬" if _item["where"] == "fact" else "🔎"
+            c1.caption(f"{_mark} {_item['title']}")
+            c1.caption(f"　{_item['reason']}")
+            if _item.get("url"):
+                c1.caption(f"　{_item['url'][:50]}")
+            _k = f"{_item['where']}_{_item['id']}"
+            # 긴 대화 원문은 그대로 사실이 못 된다 → 사실만 뽑아서 넣는 길을 준다
+            if len(_item.get("title") or "") > 60 or _item.get("url"):
+                if safe(c1.button, "✂️ 사실만 뽑기", key=f"ex_{_k}"):
+                    with st.spinner("뽑는 중…"):
+                        st.session_state[f"ex_res_{_k}"] = review_box.extract_facts(
+                            _item.get("full") or _item.get("title") or "",
+                            st.session_state.api_key)
+            _ex = st.session_state.get(f"ex_res_{_k}")
+            if _ex:
+                if _ex.get("error"):
+                    c1.caption(f"뽑기 실패: {_ex['error'][:50]}")
+                elif not (_ex["user"] or _ex["molang"]):
+                    c1.caption("남길 만한 사실이 없어요")
+                else:
+                    for _t in _ex["user"]:
+                        c1.caption(f"　👤 {_t}")
+                    for _t in _ex["molang"]:
+                        c1.caption(f"　🐰 {_t}")
+                    if safe(c1.button, "이대로 넣기", key=f"exok_{_k}"):
+                        _r = review_box.save_extracted(
+                            sb, u.identity, _item, _ex["user"], _ex["molang"])
+                        if _r.get("ok"):
+                            st.session_state.pop(f"ex_res_{_k}", None)
+                            st.rerun()
+                        else:
+                            st.error(_r.get("error"))
+            if safe(c2.button, "○", key=f"ok_{_k}", help="맞아요 / 쓸 만해요"):
+                _r = review_box.approve(sb, u.identity, _item)
+                if _r.get("ok"):
+                    st.rerun()
+                else:                       # 조용히 실패하면 왜 안 되는지 모른다
+                    st.error(f"승인 실패: {_r.get('error')}")
+            if safe(c3.button, "×", key=f"no_{_k}", help="아니에요"):
+                _r = review_box.reject(sb, u.identity, _item)
+                if _r.get("ok"):
+                    st.rerun()
+                else:
+                    st.error(f"거절 실패: {_r.get('error')}")
+
+    st.markdown("---")
+    st.caption("처음이면: 몰랑이 사진 → 외형학습 → 표정생성")
+    base_img = safe(st.file_uploader, "기본 몰랑이 사진", key="base_img",
+                    type=["png","jpg","jpeg","webp","gif","bmp"])
+    if base_img and safe(st.button, "① 외형 학습", key="appearance_btn"):
+        with st.spinner("얼굴 익히는 중..."):
+            b64 = base64.b64encode(base_img.getvalue()).decode()
+            feat = skin.extract_appearance(client, b64, base_img.type)
+            if feat:
+                skin.set_appearance(u, feat)
+                import skin_store; skin_store.save_appearance(sb, feat)
+                st.success("외형 기억 완료!")
+            else: st.error("실패 (API키 확인)")
+
+    if skin.has_appearance(u) and safe(st.button, "② 표정 5종 생성", key="faces_btn"):
+        prog = st.progress(0.0)
+        fails = []
+        last_err = None
+        for i,emo in enumerate(skin.EMOTIONS):
+            if not skin.has_face(u, emo):
+                fb, err = skin.generate_face(client, skin.get_appearance(u), emo)
+                if fb:
+                    import skin_store; skin_store.save_face(sb, emo, fb)
+                if fb:
+                    skin.store_face(u, emo, fb)
+                else:
+                    fails.append(emo); last_err = err
+            prog.progress((i+1)/len(skin.EMOTIONS))
+        if fails:
+            st.error(f"표정 생성 실패: {', '.join(fails)}")
+            if last_err:
+                st.warning(f"이유: {last_err}")
+        else:
+            st.success("표정 완성! 💗")
+            st.rerun()
+
+    made = [e for e in skin.EMOTIONS if skin.has_face(u, e)]
+    if made:
+        st.caption(f"만든 표정: {', '.join(made)}")
+        # 미리보기 (생성 확인)
+        import base64 as _b64
+        cols = st.columns(len(made))
+        for c, emo in zip(cols, made):
+            try:
+                c.image(_b64.b64decode(skin.get_face(u, emo)),
+                        caption=emo, width=60)
+            except Exception:
+                c.caption(f"{emo}?")
+
+    st.markdown("---")
+    # 정체성이 서버에 있으면 pkl 로는 저장할 수 없다(접속 객체는 pickle 불가).
+    # 서버판에서는 내용만 JSON 으로 내려받는다. 어차피 원본은 Supabase 다.
+    if isinstance(u.identity, SupabaseIdentity):
+        import json as _json
+        try:
+            _backup = {
+                "persona": u.identity.persona,
+                "values": u.identity.values,
+                "rules": u.identity.judgment_rules,
+                "facts": [{"text": f.get("text"), "strength": f.get("strength"),
+                           "source": f.get("source")} for f in u.identity.learned_facts],
+                "episodes": list(u.identity.episodic)[-100:],
+            }
+            st.download_button(
+                "⬇️ 백업 받기 (.json)",
+                data=_json.dumps(_backup, ensure_ascii=False, indent=2),
+                file_name="molang_backup.json", mime="application/json")
+            st.caption("정체성은 서버에 있어요. 이건 읽기용 사본이에요 💗")
+
+            # 성장 기록 — 화면은 '지금'을 보여주지만 성장은 '어떻게 변해왔나'다.
+            # 나중에 파이썬으로 열어 그래프를 그리거나 비교 실험을 하려면
+            # 원본이 통째로 있어야 한다.
+            try:
+                import growth_export
+                _gstate = None
+                try:
+                    from organism.store import OrganismStore
+                    _gstate = OrganismStore(sb).pull()
                 except Exception:
                     pass
-            if type_id is None:
-                type_id = "general"
-        tree = self.registry.get_or_create(type_id)
+                _gdata = growth_export.collect(sb, u.registry, _gstate, u.identity)
+                st.download_button(
+                    "🌳 성장 기록 받기 (.pkl)",
+                    data=__import__("pickle").dumps(_gdata),
+                    file_name=f"molang_growth_{__import__('time').strftime('%m%d_%H%M')}.pkl",
+                    mime="application/octet-stream",
+                    key=uk("growth_dl"))
+                st.caption(growth_export.summary_line(_gdata))
+            except Exception as e:
+                st.caption(f"성장 기록 준비 실패: {str(e)[:60]}")
+        except Exception as e:
+            st.caption(f"백업 준비 실패: {e}")
+    else:
+        pkl_bytes = persist.save_molang_bytes(u)
+        st.download_button("⬇️ 백업 받기 (.pkl)", data=pkl_bytes,
+                           file_name="molang.pkl", mime="application/octet-stream")
+        st.caption("대화할수록 몰랑이가 자라요.\n저장해서 다음에 불러오면 이어져요 💗")
 
-        # 2. 정체성 기억 + 트리 관련 기억을 맥락에 주입
-        try:            # 질문과 관련된 사실이 먼저 들어가게
-            identity_prompt = self.identity.to_system_prompt(question=question)
-        except TypeError:
-            identity_prompt = self.identity.to_system_prompt()
-        tree_mem = tree.memory_context(question, embed_fn=embed_fn)
-        context_parts = []
-        if identity_prompt:
-            context_parts.append(identity_prompt)
-        if tree_mem:
-            context_parts.append(tree_mem)
-        context_parts.append(f"질문: {question}")
-        full_context = "\n\n".join(context_parts)
+# ── 헤더 (현재 감정 프로필) ──
+last_emo = st.session_state.chat[-1][2] if st.session_state.chat else "기쁨"
+hp = profile_for(last_emo)
+head = f'<img src="{dataurl(hp)}" class="head-pic">' if hp else '🐰'
+st.markdown(f'<div class="chat-head">{head}몰랑이 💗</div>', unsafe_allow_html=True)
+st.caption("🔧 버전 v13 (말투 완급)")  # 이게 보이면 새 코드가 도는 것
 
-        # 3. 트리 위를 이동 (구조가 답 통제)
-        rec = tree.traverse(choose_fn=choose_fn, answer_fn=answer_fn,
-                            context=full_context)
-        rec.context = question   # 감사 로그엔 원 질문만
+# ── 대화 표시 ──
+for role,text,emo in st.session_state.chat:
+    if role=="me":
+        st.markdown(f'<div class="row me"><div class="bubble-me">{text}</div></div>',
+                    unsafe_allow_html=True)
+    else:
+        p = profile_for(emo)
+        ph = f'<img src="{dataurl(p)}" class="prof">' if p else '🐰'
+        st.markdown(f'<div class="row"><div>{ph}</div>'
+                    f'<div class="bubble-you">{text}</div></div>', unsafe_allow_html=True)
 
-        return {
-            "type": type_id,
-            "answer": rec.answer,
-            "path": rec.path,
-            "record": rec,
-            "tree": tree,
-        }
+# ── 입력 ──
+if "photo_key" not in st.session_state:
+    st.session_state.photo_key = 0
+photo = st.file_uploader("📷 사진 보여주기",
+    type=["png","jpg","jpeg","webp","gif","bmp"],
+    key=f"ph_{st.session_state.photo_key}")
+msg = st.chat_input("몰랑이한테 말 걸기...")
 
-    def react(self, result: dict, feedback: float,
-              was_corrected: bool = False):
-        """
-        대화 반응으로 진화:
-          - 트리 전이 학습 (구조 진화)
-          - 교정이면 확정 기억 + 정체성 흡수 (내용 진화)
-        """
-        tree = result["tree"]
-        rec = result["record"]
-        tree.learn(rec, feedback)
+# 이미 처리한 입력인지 체크 (사진 무한 반응 방지)
+if msg or photo:
+    show = msg or "(사진을 보냈어요 📷)"
+    st.session_state.chat.append(("me", show, "보통"))
 
-        if was_corrected and feedback > 0:
-            # 교정 확인 → 트리 확정 기억 + 정체성 learned_facts
-            tree.remember_from_correction(rec, None)
-            if rec.answer:
-                # NOTE: 이전에는 learned=rec.answer[:80] 을 넘겨
-                # 몰랑이 자기 답변을 사실로 적재했다 (오염 주범).
-                # 흡수 판단은 consolidate_fn / store 계층에 맡긴다.
-                self.identity.absorb(rec.context, rec.answer)
-        # 매 반응 후 망각
-        tree.forget_step()
+    with st.spinner("몰랑이가 생각 중... 🐰"):
+        # 시간 맥락 (한국시간 KST 기준)
+        last_ts = getattr(u, "last_talk_ts", None)
+        time_ctx = mtime.time_context(last_ts)
+        self_ctx = mself.to_self_prompt(u)   # 자기 인식 (LLM 독립)
+        # ── 내부: Arcogit이 생각 (유형판별→트리→기억주입→답) ──
+        q = msg or "이 사진 보고 몰랑이답게 반응해줘"
+        # 사진이면 answer_fn 대신 직접 vision 호출로 답 생성
+        if photo:
+            pb = base64.b64encode(photo.getvalue()).decode()
+            try:
+                r = client.chat.completions.create(model="gpt-4o",
+                    messages=[{"role":"system","content":u.identity.to_system_prompt(question=q)+"\n"+self_ctx+"\n"+time_ctx},
+                        {"role":"user","content":[
+                            {"type":"text","text":"이 사진 보고 몰랑이답게 반응해줘!"},
+                            {"type":"image_url","image_url":{"url":f"data:{photo.type};base64,{pb}"}}]}],
+                    temperature=0.9, max_tokens=300)
+                answer = r.choices[0].message.content
+            except Exception: answer = "우와 사진이다! 🐰💗"
+            result = None
+        else:
+            bg = self_ctx + ((" " + time_ctx) if time_ctx else "")
+            # 최근 대화를 맥락으로 — 이게 없으면 몰랑이가 자기가 방금 한 말도 모른다
+            _recent_lines = []
+            for _r, _t, _ in st.session_state.chat[-7:-1]:
+                _who = "나(몰랑이)" if _r == "molang" else "사용자"
+                _recent_lines.append(f"{_who}: {_t[:120]}")
+            _hist = "\n".join(_recent_lines)
+            # 내가 먼저 보여주겠다고 한 것이 있으면 그 실체도 같이
+            _off = st.session_state.get("_offer") or {}
+            _offer_txt = ""
+            if _off:
+                _offer_txt = ("\n[내가 방금 보여주겠다고 한 것]\n"
+                              f"주제: {_off.get('topic','')}\n"
+                              f"제목: {_off.get('title','')}\n"
+                              f"내용: {(_off.get('text') or '')[:400]}\n"
+                              f"주소: {_off.get('url','')}")
+            q_with_time = (f"[최근 대화]\n{_hist}\n\n"
+                           f"사용자가 방금 한 말: \"{q}\"{_offer_txt}\n{bg}")
+            result = u.think(q_with_time, choose_fn=choose_fn, answer_fn=answer_fn,
+                             classify_fn=classify_fn, tree_factory=designer)
+            answer = result["answer"] or "히힛 🐰"
 
-    def status(self) -> dict:
-        """현재 정체성 상태 (유형별 성숙 + 정체성 기억)."""
-        return {
-            "types": self.registry.stats(),
-            "identity": {
-                "persona": self.identity.persona,
-                "values": self.identity.values,
-                "rules": self.identity.judgment_rules,
-                "facts": len(self.identity.learned_facts),
-                "episodes": len(self.identity.episodic),
-            },
-        }
+        emotion = skin.detect_emotion(client, answer)
+        # 표정 없으면 생성+캐시 (identity에 저장 → pkl에 같이 감)
+        if not skin.has_face(u, emotion) and skin.has_appearance(u):
+            fb, _err = skin.generate_face(client, skin.get_appearance(u), emotion)
+            if fb:
+                import skin_store; skin_store.save_face(sb, emotion, fb)
+            if fb: skin.store_face(u, emotion, fb)
 
-    # ── 저장/복원 (트리 + 정체성 기억 통째로) ──
-    def save(self, path: str):
-        import tempfile, os
-        # registry 따로 저장 후 합침
-        blob = {
-            "registry": {
-                "trees": {tid: TreeRegistry._tree_blob(t)
-                          for tid, t in self.registry.trees.items()},
-                "type_examples": self.registry.type_examples,
-                "usage_count": self.registry.usage_count,
-            },
-            "identity": self.identity.__dict__,
-        }
-        with open(path, "wb") as f:
-            pickle.dump(blob, f)
-        return path
+        # ── 내부: Arcogit 진화 (피드백 학습 + 기억 흡수) ──
+        if result is not None:
+            fb_val = detect_feedback(msg or "") if msg else None
+            u.react(result, fb_val if fb_val is not None else 0.5,
+                    was_corrected=(fb_val is not None and fb_val>0))
+        # 대화 맥락은 정체성 기억에 흡수
+        u.identity.absorb(show, answer, consolidate_fn=consolidate_fn,
+                          source="user", emotion=emotion)
+        try:                       # 판단 경로를 감사 기록으로 (사고 계보)
+            u.identity.audit(type_id=(result["type"] if result else "vision"),
+                             path=(result["path"] if result else []),
+                             answer=answer)
+        except Exception:
+            pass
+        u.last_talk_ts = _time.time()   # 시간 동기화용
+        try:                     # 대화로 바뀐 판단 구조를 서버에 남긴다
+            import registry_store
+            _rs = registry_store.save(sb, u.registry)
+            if not _rs.get("ok"):
+                # 조용히 실패하면 트리가 영영 안 쌓인다 (실제로 그랬다)
+                st.session_state["_tree_save_error"] = _rs.get("error")
+        except Exception as e:
+            st.session_state["_tree_save_error"] = str(e)[:200]
+        # 대화가 관심사로 스며들게 — 여러 번 나온 말만, 작은 가중치로.
+        # (한 번 말했다고 바로 파헤치지 않는다. 확신이 천천히 굳는 것과 같은 결)
+        try:
+            from organism.store import OrganismStore
+            from organism.curiosity import nudge_interests
+            _os_ = OrganismStore()
+            _state = _os_.pull()
+            # 사용자가 한 말에서만 관심사를 뽑는다.
+            # 몰랑이 답까지 섞으면 '히힛', '너가', '있어' 같은 말투가 관심사가 된다.
+            _recent = [t for r, t, _ in st.session_state.chat[-12:]
+                       if r == "me"] + [show]
+            _bumped = nudge_interests(_state, _recent)
+            if _bumped:
+                _os_.push_state(_state, "chat")
+                st.session_state._last_bumped = _bumped
+        except Exception:
+            pass
+        mself.build_self_model(u)   # 자기 인식 갱신
 
-    @classmethod
-    def load(cls, path: str) -> "UnifiedIdentity":
-        with open(path, "rb") as f:
-            blob = pickle.load(f)
-        # registry 복원
-        reg = TreeRegistry()
-        for tid, tb in blob["registry"]["trees"].items():
-            t = ThoughtStructure(learning_rate=tb["lr"], continuity=tb["continuity"])
-            for k, v in tb["nodes"].items():
-                t.nodes[k] = JudgmentNode(**v)
-            t.transitions = tb["transitions"]; t.root_id = tb["root_id"]
-            t.history = [PathRecord(**r) for r in tb["history"]]
-            t.memory = tb.get("memory", [])
-            reg.trees[tid] = t
-        reg.type_examples = blob["registry"].get("type_examples", {})
-        reg.usage_count = blob["registry"].get("usage_count", {})
-        # identity 복원
-        mem = IdentityMemory(**blob["identity"])
-        return cls(registry=reg, memory=mem)
+    st.session_state.chat.append(("molang", answer, emotion))
+    if photo:
+        st.session_state.photo_key += 1   # 업로더 리셋 → 같은 사진 재반응 방지
+    st.rerun()
