@@ -454,7 +454,10 @@ if msg or photo:
             from organism.curiosity import nudge_interests
             _os_ = OrganismStore()
             _state = _os_.pull()
-            _recent = [t for _, t, _ in st.session_state.chat[-8:]] + [show]
+            # 사용자가 한 말에서만 관심사를 뽑는다.
+            # 몰랑이 답까지 섞으면 '히힛', '너가', '있어' 같은 말투가 관심사가 된다.
+            _recent = [t for r, t, _ in st.session_state.chat[-12:]
+                       if r == "me"] + [show]
             _bumped = nudge_interests(_state, _recent)
             if _bumped:
                 _os_.push_state(_state, "chat")
