@@ -21,3 +21,4 @@ jobs:
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           BRAVE_API_KEY: ${{ secrets.BRAVE_API_KEY }}
+          SEARCH_EVERY: "3"      # 몇 회차에 한 번 검색할지 (나머지는 생각만)
