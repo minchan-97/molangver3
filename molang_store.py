@@ -57,7 +57,7 @@ class RejectedWrite(Exception):
 
 
 class SupabaseIdentity:
-    def __init__(self, sb, max_facts_in_prompt: int = 30,
+    def __init__(self, sb, max_facts_in_prompt: int = 90,
                  recent_episodes: int = 10):
         self.sb = sb
         self.max_facts = max_facts_in_prompt
@@ -135,7 +135,15 @@ class SupabaseIdentity:
 
     # ---------- 프롬프트 주입 ----------
 
-    def to_system_prompt(self, base: str = '') -> str:
+    def to_system_prompt(self, base: str = '', question: str = '') -> str:
+        """
+        정체성 프롬프트.
+
+        사실이 많아지면 상위 N개만 넣게 되는데, 그러면 '축구팀 기억나?' 처럼
+        **지금 묻는 것**에 해당하는 사실이 강도가 낮다는 이유로 잘린다.
+        (실제로 42건 중 30개만 들어가 축구 기억이 빠졌다)
+        그래서 질문과 낱말이 겹치는 사실은 먼저 넣는다.
+        """
         parts = []
         if self.persona:
             parts.append(f"[너의 정체성]\n{self.persona}")
@@ -145,6 +153,11 @@ class SupabaseIdentity:
         if self.judgment_rules:
             rs = "\n".join(f"- {r}" for r in self.judgment_rules)
             parts.append(f"[너의 판단 기준 — 이 기준으로 판단하라]\n{rs}")
+
+        import re as _re
+        qtok = {w for w in _re.findall(r'[가-힣A-Za-z]{2,}', question or '')}
+        qstem = {w[:2] for w in qtok}        # '좋아하는' ↔ '좋아한다' 를 맞추려면
+                                            # 어미를 떼고 앞 두 글자로 비교해야 한다
 
         items = []
         for f in self._facts:
@@ -158,12 +171,21 @@ class SupabaseIdentity:
                 tag = ''
             else:
                 tag = ' (아마도)'
-            items.append((TRUST_STRENGTH.get(f.get('trust'), 0.6) * s,
-                          f"- {f['text']}{tag}"))
+            score = TRUST_STRENGTH.get(f.get('trust'), 0.6) * s
+            if qtok:                      # 지금 묻는 것과 겹치면 앞으로
+                ftok = set(_re.findall(r'[가-힣A-Za-z]{2,}', f['text']))
+                if qtok & ftok or qstem & {w[:2] for w in ftok}:
+                    score += 10.0
+            items.append((score, f"- {f['text']}{tag}"))
         items.sort(key=lambda x: -x[0])
         if items:
-            fs = "\n".join(t for _, t in items[:self.max_facts])
-            parts.append(f"[네가 축적한 지식]\n{fs}")
+            # 사실이 상한을 넘으면, 무엇이 잘렸는지 알 수 있게 알려준다.
+            # (조용히 잘리면 "왜 기억을 못 하지?" 의 원인을 영영 못 찾는다)
+            shown = items[:self.max_facts]
+            fs = "\n".join(t for _, t in shown)
+            more = len(items) - len(shown)
+            tail = f"\n(그 밖에 {more}가지를 더 알고 있지만 지금은 떠오르지 않는다)" if more else ""
+            parts.append(f"[네가 축적한 지식]\n{fs}{tail}")
 
         if self._episodic:
             es = "\n".join(f"- {e}" for e in self._episodic)
@@ -377,4 +399,3 @@ class SupabaseIdentity:
 
 def _now_iso():
     return datetime.now(KST).isoformat()
-
