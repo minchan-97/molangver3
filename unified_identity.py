@@ -68,7 +68,10 @@ class UnifiedIdentity:
         tree = self.registry.get_or_create(type_id)
 
         # 2. 정체성 기억 + 트리 관련 기억을 맥락에 주입
-        identity_prompt = self.identity.to_system_prompt()
+        try:            # 질문과 관련된 사실이 먼저 들어가게
+            identity_prompt = self.identity.to_system_prompt(question=question)
+        except TypeError:
+            identity_prompt = self.identity.to_system_prompt()
         tree_mem = tree.memory_context(question, embed_fn=embed_fn)
         context_parts = []
         if identity_prompt:
