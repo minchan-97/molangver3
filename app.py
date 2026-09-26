@@ -337,6 +337,28 @@ with st.sidebar:
                 data=_json.dumps(_backup, ensure_ascii=False, indent=2),
                 file_name="molang_backup.json", mime="application/json")
             st.caption("정체성은 서버에 있어요. 이건 읽기용 사본이에요 💗")
+
+            # 성장 기록 — 화면은 '지금'을 보여주지만 성장은 '어떻게 변해왔나'다.
+            # 나중에 파이썬으로 열어 그래프를 그리거나 비교 실험을 하려면
+            # 원본이 통째로 있어야 한다.
+            try:
+                import growth_export
+                _gstate = None
+                try:
+                    from organism.store import OrganismStore
+                    _gstate = OrganismStore(sb).pull()
+                except Exception:
+                    pass
+                _gdata = growth_export.collect(sb, u.registry, _gstate, u.identity)
+                st.download_button(
+                    "🌳 성장 기록 받기 (.pkl)",
+                    data=__import__("pickle").dumps(_gdata),
+                    file_name=f"molang_growth_{__import__('time').strftime('%m%d_%H%M')}.pkl",
+                    mime="application/octet-stream",
+                    key=uk("growth_dl"))
+                st.caption(growth_export.summary_line(_gdata))
+            except Exception as e:
+                st.caption(f"성장 기록 준비 실패: {str(e)[:60]}")
         except Exception as e:
             st.caption(f"백업 준비 실패: {e}")
     else:
@@ -470,4 +492,3 @@ if msg or photo:
     if photo:
         st.session_state.photo_key += 1   # 업로더 리셋 → 같은 사진 재반응 방지
     st.rerun()
-
