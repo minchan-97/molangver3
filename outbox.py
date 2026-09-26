@@ -230,6 +230,22 @@ def pending(sb, limit: int = 3) -> list[dict]:
         return []
 
 
+def latest_finding(sb) -> dict | None:
+    """먼저 말 건 '찾은 것'의 실체 — 제목·주소·본문 앞부분.
+
+    말만 건네고 내용을 안 들고 있으면, 사용자가 '같이 보자'고 했을 때
+    무엇을 보자는 건지 몰랑이 자신이 모른다. 실제로 그렇게 어긋났다.
+    """
+    try:
+        rows = (sb.table("organism_observations")
+                .select("id,topic,title,text,url,status")
+                .eq("status", "candidate")
+                .order("id", desc=True).limit(1).execute().data) or []
+        return rows[0] if rows else None
+    except Exception:
+        return None
+
+
 def mark_sent(sb, ids: list[int]):
     if not ids:
         return
@@ -238,4 +254,3 @@ def mark_sent(sb, ids: list[int]):
             {"sent_at": _now().isoformat()}).in_("id", ids).execute()
     except Exception:
         pass
-
