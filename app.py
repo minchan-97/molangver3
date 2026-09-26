@@ -194,34 +194,39 @@ with st.sidebar:
                f"· 사고유형 {len(u.registry.trees)}개 "
                f"· 표정 {len(getattr(u, 'molang_faces', {}) or {})}개")
     with st.expander("📦 예전 몰랑이(pkl) 옮기기", expanded=(_facts_n == 0)):
-        if True:
-            up = safe(st.file_uploader, "사실이 든 molang.pkl", key="mig_pkl")
-            if up and safe(st.button, "서버로 옮기기", key="mig_btn"):
-                try:
-                    old = persist.load_molang_bytes(up.getvalue())
-                    n = 0
-                    for f in (getattr(old.identity, "learned_facts", []) or []):
-                        try:
-                            u.identity._reinforce_or_add(
-                                f["text"] if isinstance(f, dict) else str(f),
-                                source="user")   # 허용값: user/assistant/search/nudge
-                            n += 1
-                        except Exception as _e:
-                            st.caption(f"건너뜀: {str(_e)[:80]}")
-                    if getattr(old.identity, "persona", None):
-                        u.identity.persona = old.identity.persona
-                        u.identity.save_identity()
-                    # 얼굴·외형도 같이 옮긴다 (pkl 에만 있던 것)
-                    import skin_store
-                    if getattr(old, "molang_faces", None):
-                        u.molang_faces = old.molang_faces
-                    if getattr(old, "molang_appearance", None):
-                        u.molang_appearance = old.molang_appearance
-                    _f = skin_store.save_all(sb, u)
-                    st.success(f"사실 {n}개, 표정 {_f}개를 서버로 옮겼어요.")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"옮기기 실패: {e}")
+        st.caption("옛 판 pkl 도 읽어요. 사용자 사실·몰랑이 자기 사실·확인 필요한 "
+                   "대화 원문으로 나눠서 넣습니다.")
+        up = safe(st.file_uploader, "예전 molang.pkl", key="mig_pkl")
+        if up:
+            import legacy_import, skin_store
+            _parsed = legacy_import.read(up.getvalue())
+            if _parsed.get("error"):
+                st.error(_parsed["error"])
+            else:
+                st.caption(
+                    f"사용자 사실 {len(_parsed['user_facts'])} · "
+                    f"몰랑이 자기 사실 {len(_parsed['self_facts'])} · "
+                    f"확인 필요 {len(_parsed['raw_answers'])} · "
+                    f"표정 {len(_parsed['faces'])}개"
+                    + (f" · 대화 {_parsed['talks']}회" if _parsed.get("talks") else ""))
+                _take_p = st.checkbox("말투(페르소나)도 가져오기", value=False,
+                                      key=uk("mig_persona"))
+                if safe(st.button, "서버로 옮기기", key="mig_btn"):
+                    try:
+                        r = legacy_import.apply(sb, u.identity, _parsed,
+                                                take_persona=_take_p)
+                        if _parsed.get("faces"):
+                            u.molang_faces = dict(_parsed["faces"])
+                        if _parsed.get("appearance"):
+                            u.molang_appearance = _parsed["appearance"]
+                        _f = skin_store.save_all(sb, u)
+                        st.success(
+                            f"사실 {r['user_facts']}건, 몰랑이 자기 사실 "
+                            f"{r['self_facts']}건, 표정 {_f}개를 옮겼어요. "
+                            f"확인 필요 {r['quarantined']}건은 검토 대기로 보냈어요.")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"옮기기 실패: {e}")
 
     # 검토 대기 — 검토함이 두 곳이다(대화에서 격리된 사실 + 워커가 찾아온 관측).
     # 앱이 한 쪽만 읽어서 워커가 격리해도 0으로 보이던 문제를 고쳤다.
