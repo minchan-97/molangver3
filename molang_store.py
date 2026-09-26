@@ -27,6 +27,10 @@ TRUST_STRENGTH = {'human': 1.0, 'derived': 0.6, 'doubted': 0.2}
 ABSORBABLE = {'user'}
 
 
+# molang_facts.source_ok 제약과 같은 값 (DB 와 코드가 어긋나면 저장이 통째로 실패)
+ALLOWED_SOURCES = {'user', 'assistant', 'search', 'nudge'}
+
+
 def _closer_to_answer(fact: str, question: str, answer: str) -> bool:
     """
     사실이 사용자의 말이 아니라 몰랑이의 답변에서 나온 것인가.
@@ -228,6 +232,11 @@ class SupabaseIdentity:
         fact = fact.strip()
         if not fact:
             return
+        # source 는 '어디서 왔나'만 받는다 (DB 제약 source_ok).
+        # 'human'(신뢰도 값)이나 'migration' 같은 걸 넣으면 통째로 거부된다.
+        # 부르는 쪽이 옛 버전이어도 여기서 막는다.
+        if source not in ALLOWED_SOURCES:
+            source = 'user' 
 
         # 방어선 1: 자기 답변 에코는 검역소로
         if is_assistant_echo(fact):
@@ -297,9 +306,23 @@ class SupabaseIdentity:
                 return
 
     def _quarantine(self, text: str, reason: str, evidence: dict = None):
+        """
+        격리. **같은 내용을 다시 넣지 않는다.**
+        같은 답변이 매 턴 다시 격리되면 검토함이 같은 문장으로 채워지고,
+        승인해도 줄지 않는다(실제로 같은 문장이 4번 쌓였다).
+        """
+        body = (text or '')[:2000]
+        try:
+            key = normalize(body)[:120]
+            rows = (self.sb.table('molang_quarantine').select('id,text')
+                    .order('id', desc=True).limit(80).execute().data) or []
+            for r in rows:
+                if normalize(r.get('text') or '')[:120] == key:
+                    return          # 이미 있다 (처리됐든 대기 중이든)
+        except Exception:
+            pass
         self.sb.table('molang_quarantine').insert({
-            'text': text[:2000], 'reason': reason,
-            'evidence': evidence or {},
+            'text': body, 'reason': reason, 'evidence': evidence or {},
         }).execute()
 
     # ---------- 사람 승인 (cogito anchor) ----------
