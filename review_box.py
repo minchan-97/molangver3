@@ -27,6 +27,7 @@ def pending(sb, identity, limit: int = 20) -> list[dict]:
                 "where": "fact",
                 "id": r.get("id"),
                 "title": str(r.get("text") or "")[:80],
+                "full": str(r.get("text") or ""),
                 "reason": r.get("reason") or "확신 전",
                 "url": None,
                 "at": r.get("created_at"),
@@ -48,6 +49,7 @@ def pending(sb, identity, limit: int = 20) -> list[dict]:
                 "where": "observation",
                 "id": r.get("id"),
                 "title": (r.get("title") or r.get("text") or "")[:80],
+                "full": ((r.get("title") or "") + "\n" + (r.get("text") or "")).strip(),
                 "reason": f"{r.get('topic','')} · 점수 {round(r.get('score') or 0, 2)}",
                 "url": r.get("url"),
                 "at": r.get("seen_at"),
@@ -114,6 +116,69 @@ def reject(sb, identity, item) -> dict:
             if not (getattr(res, "data", None) or []):
                 return {"ok": False, "error": f"관측 {item['id']}번을 못 바꿨어요"}
         return {"ok": True}
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:200]}
+
+
+EXTRACT_SYSTEM = """너는 대화 한 토막에서 '오래 기억할 사실'만 뽑는다.
+
+규칙
+- **사용자에 대한 사실**과 **몰랑이 자신에 대한 사실**을 나눠서 뽑는다.
+- 몰랑이가 자기 취향을 말한 것은 molang 쪽에 넣는다 (예: "몰랑이는 당근을 좋아한다").
+- 사용자가 말했거나 사용자에 대해 확인된 것만 user 쪽에 넣는다.
+- 한 문장 30자 안팎, 평서문으로. 이모지·말투·감탄사는 빼고.
+- 인사·감탄·되묻기처럼 남길 게 없으면 빈 목록.
+
+JSON 하나만: {"user": ["...", "..."], "molang": ["..."]}"""
+
+
+def extract_facts(text: str, api_key: str, model="gpt-4o-mini") -> dict:
+    """
+    긴 대화 원문에서 짧은 사실 문장만 뽑는다.
+
+    왜 필요한가
+      옛 pkl 에서 온 19건은 사실이 몰랑이 말투 안에 묻혀 있다.
+      ("오, 찬기야! 💖 대구FC를 좋아하는구나! …")
+      원문 그대로는 사실이 될 수 없고(길고 말투가 섞임), 버리면 아깝다.
+      그래서 **뽑아서** 넣는다.
+    """
+    if not api_key or not (text or "").strip():
+        return {"user": [], "molang": [], "error": "키가 없거나 내용이 비었어요"}
+    try:
+        import json
+        from openai import OpenAI
+        c = OpenAI(api_key=api_key)
+        res = c.chat.completions.create(
+            model=model, temperature=0, response_format={"type": "json_object"},
+            messages=[{"role": "system", "content": EXTRACT_SYSTEM},
+                      {"role": "user", "content": text[:1500]}])
+        d = json.loads(res.choices[0].message.content)
+        clean = lambda xs: [str(x).strip() for x in (xs or [])
+                            if 4 <= len(str(x).strip()) <= 80][:5]
+        return {"user": clean(d.get("user")), "molang": clean(d.get("molang"))}
+    except Exception as e:
+        return {"user": [], "molang": [], "error": str(e)[:150]}
+
+
+def save_extracted(sb, identity, item, user_facts, molang_facts) -> dict:
+    """뽑아낸 사실을 넣고, 원본 격리는 닫는다."""
+    n = 0
+    try:
+        for t in user_facts:
+            identity._reinforce_or_add(t, source="extracted")
+            n += 1
+        for t in molang_facts:
+            t2 = t if t.startswith("몰랑이") else f"몰랑이는 {t}"
+            identity._reinforce_or_add(t2, source="extracted_self")
+            n += 1
+        if item["where"] == "fact":
+            sb.table("molang_quarantine").update(
+                {"resolved": "approved"}).eq("id", item["id"]).execute()
+        else:
+            sb.table("organism_observations").update(
+                {"status": "candidate"}).eq("id", item["id"]).execute()
+        identity.reload()
+        return {"ok": True, "n": n}
     except Exception as e:
         return {"ok": False, "error": str(e)[:200]}
 
