@@ -165,3 +165,4 @@ class UnifiedIdentity:
         # identity 복원
         mem = IdentityMemory(**blob["identity"])
         return cls(registry=reg, memory=mem)
+
