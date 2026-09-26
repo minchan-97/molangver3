@@ -132,6 +132,23 @@ def main(mode):
             out['curiosity'] = cyc
             out['topology'] = maintenance(state)
 
+        # 호기심이 사고 구조를 바꾸는 자리 — 승인된 근거를 트리에 먹이고,
+        # 쌓이면 판단 단계를 늘리고, 안 잡히는 주제가 모이면 새 유형을 만든다.
+        try:
+            import curiosity_growth
+            from tree_registry import TreeRegistry
+            import registry_store
+            _reg = TreeRegistry()
+            registry_store.load_into(store.sb, _reg)
+            out['growth'] = curiosity_growth.run(
+                store.sb, _reg, state=state,
+                api_key=os.environ.get('OPENAI_API_KEY'), log=print)
+            if out['growth'].get('deepened') or out['growth'].get('new_type') \
+                    or out['growth'].get('memory', {}).get('fed'):
+                registry_store.save(store.sb, _reg)
+        except Exception as e:
+            out['growth'] = {'error': str(e)}
+
         if mode in ('nightly', 'all'):
             cyc = curiosity_cycle(state, store, deep=True)
             out['deep_curiosity'] = cyc
