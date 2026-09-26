@@ -22,3 +22,4 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           BRAVE_API_KEY: ${{ secrets.BRAVE_API_KEY }}
           SEARCH_EVERY: "3"      # 몇 회차에 한 번 검색할지 (나머지는 생각만)
+          MUSING_ROUNDS: "40"    # 한 번 깨어날 때 생각하는 횟수 (비용 0)
