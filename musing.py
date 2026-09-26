@@ -79,10 +79,20 @@ def wish(state):
 def settle(state, decay=0.985, floor=0.02):
     """오래된 관심은 옅어지고, 부스러기는 버린다."""
     try:
-        from organism.curiosity import _is_topic_like
+        from organism.curiosity import _is_topic_like, strip_josa
     except Exception:
         def _is_topic_like(t):
             return 2 <= len(t) <= 12
+
+        def strip_josa(t):
+            return t
+
+    # 조사만 다른 관심사는 하나로 합친다 ('우주에' + '우주' → '우주')
+    for t in list((state.interests or {}).keys()):
+        base = strip_josa(t)
+        if base != t and _is_topic_like(base):
+            state.interests[base] = min(
+                5.0, state.interests.get(base, 0.0) + state.interests.pop(t))
 
     dropped, faded = [], 0
     for t in list((state.interests or {}).keys()):
@@ -193,3 +203,4 @@ def to_reflection_context(state, n=6) -> str:
         if c:
             lines.append("이어본 것: " + ", ".join("-".join(p) for p in c))
     return "\n".join(dict.fromkeys(lines))[:800]
+
