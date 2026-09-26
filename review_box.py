@@ -94,7 +94,8 @@ def approve(sb, identity, item) -> dict:
                 return {"ok": False,
                         "error": f"관측 {item['id']}번을 못 바꿨어요 "
                                  "(RLS 로 update 가 막혔을 수 있어요)"}
-        return {"ok": True}
+        return {"ok": True, "as_fact": bool(item.get("where") == "fact"
+                                            and len(item.get("title") or "") <= 80)}
     except Exception as e:
         return {"ok": False, "error": str(e)[:200]}
 
