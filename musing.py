@@ -123,6 +123,53 @@ def think(state, kinds=None, rng=None, log=print):
     return out
 
 
+def think_many(state, rounds=30, rng=None, log=print, stop_when_still=5):
+    """
+    한 번 깨어났을 때 여러 번 생각한다.
+
+    왜 여러 번인가
+      러너를 한 번 띄우는 데 2분이 든다. 실제 생각은 몇 밀리초다.
+      그래서 깨어난 김에 여러 번 생각하는 쪽이 훨씬 싸다.
+
+    왜 무한정은 아닌가
+      같은 생각을 반복하면 의미가 없다. 관심 지형이 더 이상 변하지 않으면
+      (연속 stop_when_still 회) 그만둔다. 생각이 멈출 줄 아는 것도 설계다.
+
+    회차마다 종류를 조금씩 바꾼다 — 매번 다섯 가지를 다 하지는 않는다.
+    사람도 어떤 때는 되짚기만, 어떤 때는 정리만 한다.
+    """
+    rng = rng or random.Random(time.time_ns())
+    last = None
+    still = 0
+    done = 0
+    for i in range(max(1, rounds)):
+        # 이번엔 어떤 생각을 할까 (settle 은 가끔, 나머지는 자주)
+        kinds = [k for k in ("recall", "wonder", "connect", "wish")
+                 if rng.random() < 0.7] or ["wonder"]
+        think(state, kinds=kinds, rng=rng, log=lambda *a: None)
+        done += 1
+
+        shape = tuple(sorted((t, round(v, 3))
+                             for t, v in (state.interests or {}).items()))
+        if shape == last:
+            still += 1
+            if still >= stop_when_still:
+                break
+        else:
+            still = 0
+            last = shape
+
+    # 정리(망각)는 깨어날 때 한 번만. 생각할 때마다 걸면 몇 분 만에
+    # 관심이 다 사라진다 — 망각은 시간의 함수지 생각 횟수의 함수가 아니다.
+    tidy = settle(state)
+
+    log(f"  조용한 생각 {done}회 · 관심사 {len(state.interests or {})}개"
+        + (f" · 버린 부스러기 {len(tidy['dropped'])}개" if tidy["dropped"] else ""))
+    return {"rounds": done, "stopped_early": done < rounds,
+            "interests": len(state.interests or {}),
+            "dropped": tidy["dropped"]}
+
+
 def to_reflection_context(state, n=6) -> str:
     """밤에 회고(문장)를 쓸 때 재료로 주는 요약. 말은 생각의 요약이다."""
     trace = (getattr(state, "musings", []) or [])[-n:]
