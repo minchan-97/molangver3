@@ -75,9 +75,11 @@ if "unified" not in st.session_state:
     # 정체성을 서버로. skin 다음에 붙여야 DB의 persona 가 이긴다.
     u.identity = SupabaseIdentity(sb)
     # 사고 트리(판단 구조)도 서버에서 복원 — 없으면 기본 유형으로 시작
-    import registry_store
+    import registry_store, skin_store
     _n = registry_store.load_into(sb, u.registry)
     st.session_state._tree_restored = _n
+    skin.install_molang_persona(u)      # molang_faces 자리 보장
+    skin_store.load_into(sb, u)         # 서버에 있는 얼굴·외형 복원
     st.session_state.unified = u
     st.session_state.chat = [("molang", "안녕! 나 몰랑이야 🐰💗 오늘 어땠어?", "기쁨")]
 
@@ -102,7 +104,8 @@ with st.sidebar:
     # 이제 정체성은 서버(Supabase)에 있다. pkl 은 '처음 한 번 옮기기'에만 쓴다.
     _facts_n = len(u.identity.learned_facts)
     st.caption(f"☁️ 서버 연결됨 · 사실 {_facts_n}개 · 대화 {len(u.identity.episodic)}회 "
-               f"· 사고유형 {len(u.registry.trees)}개")
+               f"· 사고유형 {len(u.registry.trees)}개 "
+               f"· 표정 {len(getattr(u, 'molang_faces', {}) or {})}개")
     if _facts_n == 0:
         with st.expander("📦 예전 몰랑이(pkl) 한 번만 옮기기"):
             up = st.file_uploader("molang.pkl", type=None, key="mig_pkl")
@@ -121,7 +124,14 @@ with st.sidebar:
                     if getattr(old.identity, "persona", None):
                         u.identity.persona = old.identity.persona
                         u.identity.save_identity()
-                    st.success(f"사실 {n}개를 서버로 옮겼어요. 이제 pkl 은 필요 없어요.")
+                    # 얼굴·외형도 같이 옮긴다 (pkl 에만 있던 것)
+                    import skin_store
+                    if getattr(old, "molang_faces", None):
+                        u.molang_faces = old.molang_faces
+                    if getattr(old, "molang_appearance", None):
+                        u.molang_appearance = old.molang_appearance
+                    _f = skin_store.save_all(sb, u)
+                    st.success(f"사실 {n}개, 표정 {_f}개를 서버로 옮겼어요.")
                     st.rerun()
                 except Exception as e:
                     st.error(f"옮기기 실패: {e}")
@@ -149,7 +159,10 @@ with st.sidebar:
         with st.spinner("얼굴 익히는 중..."):
             b64 = base64.b64encode(base_img.getvalue()).decode()
             feat = skin.extract_appearance(client, b64, base_img.type)
-            if feat: skin.set_appearance(u, feat); st.success("외형 기억 완료!")
+            if feat:
+                skin.set_appearance(u, feat)
+                import skin_store; skin_store.save_appearance(sb, feat)
+                st.success("외형 기억 완료!")
             else: st.error("실패 (API키 확인)")
 
     if skin.has_appearance(u) and st.button("② 표정 5종 생성"):
@@ -159,6 +172,8 @@ with st.sidebar:
         for i,emo in enumerate(skin.EMOTIONS):
             if not skin.has_face(u, emo):
                 fb, err = skin.generate_face(client, skin.get_appearance(u), emo)
+                if fb:
+                    import skin_store; skin_store.save_face(sb, emo, fb)
                 if fb:
                     skin.store_face(u, emo, fb)
                 else:
@@ -274,6 +289,8 @@ if msg or photo:
         # 표정 없으면 생성+캐시 (identity에 저장 → pkl에 같이 감)
         if not skin.has_face(u, emotion) and skin.has_appearance(u):
             fb, _err = skin.generate_face(client, skin.get_appearance(u), emotion)
+            if fb:
+                import skin_store; skin_store.save_face(sb, emotion, fb)
             if fb: skin.store_face(u, emotion, fb)
 
         # ── 내부: Arcogit 진화 (피드백 학습 + 기억 흡수) ──
