@@ -92,6 +92,19 @@ if "unified" not in st.session_state:
 
 u = st.session_state.unified
 
+# 몰랑이가 먼저 걸어둔 말이 있으면 대화에 얹는다 (자율 발화)
+if not st.session_state.get("_nudge_checked"):
+    st.session_state["_nudge_checked"] = True
+    try:
+        import outbox
+        _waiting = outbox.pending(sb, 2)
+        if _waiting:
+            for _w in _waiting:
+                st.session_state.chat.append(("molang", _w["body"], "기쁨"))
+            outbox.mark_sent(sb, [_w["id"] for _w in _waiting])
+    except Exception:
+        pass
+
 # LLM 함수 (Arcogit이 쓰는 것)
 choose_fn = make_choose_fn(client)
 answer_fn = make_answer_fn(client, {})
@@ -388,3 +401,4 @@ if msg or photo:
     if photo:
         st.session_state.photo_key += 1   # 업로더 리셋 → 같은 사진 재반응 방지
     st.rerun()
+
