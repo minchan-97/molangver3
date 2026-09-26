@@ -66,23 +66,76 @@ def infer_topics(text, n=5):
 
 def choose_topic(state, rng=None):
     """
-    검색 주제는 SEEDS 또는 이전에 실제로 검색했던 주제에서만 고른다.
-    추론 태그가 그대로 검색어가 되면 관심 지형이 파편으로 채워진다.
+    주제 고르기. 세 갈래를 섞는다.
+
+      1) 자유 탐색 (EXPLORE_RATE) — 목적과 무관하게 아무거나.
+         호기심이 목적인 존재가 정해진 것만 보면 목적을 스스로 배반한다.
+      2) 관심사 기반 — 대화에서 스며든 것과 검색으로 쌓인 것.
+         점수 = 관심도 × 새로움 × 목적 친화도
+      3) 막히면 씨앗 목록.
+
+    관심사에서 고를 때도 '주제처럼 생긴 말'만 쓴다. 조사나 파편이 검색어가
+    되면 관심 지형이 부스러기로 채워진다.
     """
     rng = rng or random.Random()
-    searched = [t for t in state.visited if t in SEEDS or ' ' in t or len(t) >= 3]
+    try:
+        import purpose
+        explore, aff = purpose.EXPLORE_RATE, purpose.affinity
+    except Exception:
+        explore, aff = 0.35, (lambda t: 1.0)
 
-    # 35% 과감한 탐색
-    if not state.interests or rng.random() < .35:
+    def ok(t):
+        return t in SEEDS or (' ' in t and len(t) >= 3) or _is_topic_like(t)
+
+    # 1) 자유 탐색
+    if not state.interests or rng.random() < explore:
         pool = [x for x in SEEDS if state.visited.get(x, 0) < 3] or SEEDS
+        # 씨앗 말고 예전에 파본 주제도 가끔 다시 (완전한 무작위성 유지)
+        seen = [t for t in state.visited if ok(t)]
+        if seen and rng.random() < 0.3:
+            pool = pool + seen
         return rng.choice(pool)
 
+    # 2) 관심사 — 목적 친화도를 곱해 '몰랑이다운' 쪽에 무게를 둔다
     ranked = sorted(
-        (t for t in state.interests if t in searched or t in SEEDS),
-        key=lambda t: state.interests[t] * state.novelty(t), reverse=True)
+        (t for t in state.interests if ok(t)),
+        key=lambda t: state.interests[t] * state.novelty(t) * aff(t),
+        reverse=True)
     if not ranked:
         return rng.choice(SEEDS)
     return rng.choice(ranked[:max(1, min(5, len(ranked)))])
+
+
+def nudge_interests(state, texts, weight=None, min_mentions=None):
+    """
+    대화에서 관심사를 조금씩 올린다. (한 번 말했다고 바로 파지 않는다)
+    texts: 최근 대화 문장들. 여러 번 나온 주제어만, 작은 가중치로.
+    반환: 올라간 주제 목록
+    """
+    try:
+        import purpose
+        weight = purpose.NUDGE_WEIGHT if weight is None else weight
+        min_mentions = purpose.MIN_MENTIONS if min_mentions is None else min_mentions
+    except Exception:
+        weight = weight or 0.08
+        min_mentions = min_mentions or 2
+
+    freq = {}
+    for text in texts:
+        for t in tokens(text or ''):
+            if _is_topic_like(t):
+                freq[t] = freq.get(t, 0) + 1
+
+    bumped = []
+    for t, n in sorted(freq.items(), key=lambda kv: -kv[1]):
+        if n < min_mentions:
+            continue
+        old = float(state.interests.get(t, 0.0))
+        state.interests[t] = max(0.0, min(5.0, old + weight * min(n, 4)))
+        bumped.append(t)
+        if len(bumped) >= 5:
+            break
+    return bumped
 
 
 def brave_search(query, api_key, count=5):
@@ -106,10 +159,16 @@ def expand_query_with_openai(topic, identity_prompt="", model=None):
     try:
         from openai import OpenAI
         c = OpenAI(api_key=key)
+        try:                      # 목적을 문맥에 얹는다 (없어도 동작)
+            import purpose
+            why = purpose.query_context()
+        except Exception:
+            why = ""
         msg = ("You are choosing one curiosity search direction for a "
                "persistent digital organism. Return ONLY a short Korean "
                "web-search query. Seek something genuinely informative and "
-               "not merely useful. Current topic: " + topic
+               "not merely useful. " + why
+               + "\nCurrent topic: " + topic
                + "\nIdentity context:\n" + identity_prompt[-2500:])
         r = c.chat.completions.create(
             model=model or os.environ.get('OPENAI_CURIOSITY_MODEL',
