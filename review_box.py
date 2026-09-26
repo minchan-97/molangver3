@@ -70,8 +70,12 @@ def approve(sb, identity, item) -> dict:
     """
     try:
         if item["where"] == "fact":
-            sb.table("molang_quarantine").update(
+            res = sb.table("molang_quarantine").update(
                 {"resolved": "approved"}).eq("id", item["id"]).execute()
+            if not (getattr(res, "data", None) or []):
+                return {"ok": False,
+                        "error": f"격리 {item['id']}번을 못 찾았어요 "
+                                 "(이미 처리됐거나 권한 문제)"}
             text = (item.get("title") or "").strip()
             if text:
                 # source 는 '어디서 왔나'(user/assistant/search/nudge),
@@ -84,8 +88,12 @@ def approve(sb, identity, item) -> dict:
                     identity.approve(rows[0]["id"])
             identity.reload()
         else:
-            sb.table("organism_observations").update(
+            res = sb.table("organism_observations").update(
                 {"status": "candidate"}).eq("id", item["id"]).execute()
+            if not (getattr(res, "data", None) or []):
+                return {"ok": False,
+                        "error": f"관측 {item['id']}번을 못 바꿨어요 "
+                                 "(RLS 로 update 가 막혔을 수 있어요)"}
         return {"ok": True}
     except Exception as e:
         return {"ok": False, "error": str(e)[:200]}
@@ -94,12 +102,16 @@ def approve(sb, identity, item) -> dict:
 def reject(sb, identity, item) -> dict:
     try:
         if item["where"] == "fact":
-            sb.table("molang_quarantine").update(
+            res = sb.table("molang_quarantine").update(
                 {"resolved": "rejected"}).eq("id", item["id"]).execute()
+            if not (getattr(res, "data", None) or []):
+                return {"ok": False, "error": f"격리 {item['id']}번을 못 찾았어요"}
             identity.reload()
         else:
-            sb.table("organism_observations").update(
+            res = sb.table("organism_observations").update(
                 {"status": "reject"}).eq("id", item["id"]).execute()
+            if not (getattr(res, "data", None) or []):
+                return {"ok": False, "error": f"관측 {item['id']}번을 못 바꿨어요"}
         return {"ok": True}
     except Exception as e:
         return {"ok": False, "error": str(e)[:200]}
