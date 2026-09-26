@@ -75,11 +75,18 @@ if "unified" not in st.session_state:
     # 정체성을 서버로. skin 다음에 붙여야 DB의 persona 가 이긴다.
     u.identity = SupabaseIdentity(sb)
     # 사고 트리(판단 구조)도 서버에서 복원 — 없으면 기본 유형으로 시작
-    import registry_store, skin_store
+    import registry_store, skin_store, purpose
     _n = registry_store.load_into(sb, u.registry)
     st.session_state._tree_restored = _n
     skin.install_molang_persona(u)      # molang_faces 자리 보장
     skin_store.load_into(sb, u)         # 서버에 있는 얼굴·외형 복원
+    # 목적(왜 사는가)을 정체성 앞에 세운다 — 서버 persona 가 비어 있을 때만
+    try:
+        if not (u.identity.persona or "").strip():
+            u.identity.persona = purpose.to_prompt()
+            u.identity.save_identity()
+    except Exception:
+        pass
     st.session_state.unified = u
     st.session_state.chat = [("molang", "안녕! 나 몰랑이야 🐰💗 오늘 어땠어?", "기쁨")]
 
@@ -167,6 +174,10 @@ with st.sidebar:
     import review_box
     _cnt = review_box.counts(sb, u.identity)
     _q = review_box.pending(sb, u.identity, 20)
+    _bump = st.session_state.get("_last_bumped")
+    if _bump:
+        st.caption(f"🌱 요즘 관심: {', '.join(_bump[:5])}")
+
     st.markdown("---")
     st.markdown(f"### 🧪 검토 대기 {_cnt['total']}")
     st.caption(f"대화에서 {_cnt['fact']}건 · 워커가 찾은 것 {_cnt['observation']}건")
@@ -345,6 +356,20 @@ if msg or photo:
         try:                     # 대화로 바뀐 판단 구조를 서버에 남긴다
             import registry_store
             registry_store.save(sb, u.registry)
+        except Exception:
+            pass
+        # 대화가 관심사로 스며들게 — 여러 번 나온 말만, 작은 가중치로.
+        # (한 번 말했다고 바로 파헤치지 않는다. 확신이 천천히 굳는 것과 같은 결)
+        try:
+            from organism.store import OrganismStore
+            from organism.curiosity import nudge_interests
+            _os_ = OrganismStore()
+            _state = _os_.pull()
+            _recent = [t for _, t, _ in st.session_state.chat[-8:]] + [show]
+            _bumped = nudge_interests(_state, _recent)
+            if _bumped:
+                _os_.push_state(_state, "chat")
+                st.session_state._last_bumped = _bumped
         except Exception:
             pass
         mself.build_self_model(u)   # 자기 인식 갱신
