@@ -149,6 +149,17 @@ def main(mode):
         except Exception as e:
             out['growth'] = {'error': str(e)}
 
+        # 먼저 말 걸기 — 계기가 있을 때만 (없으면 아무 말도 안 한다)
+        try:
+            import outbox
+            from molang_store import SupabaseIdentity
+            _ident = SupabaseIdentity(store.sb)
+            _msg = outbox.make(store.sb, identity=_ident, registry=_reg,
+                               api_key=os.environ.get('OPENAI_API_KEY'))
+            out['nudge'] = _msg or '계기 없음'
+        except Exception as e:
+            out['nudge'] = {'error': str(e)}
+
         if mode in ('nightly', 'all'):
             cyc = curiosity_cycle(state, store, deep=True)
             out['deep_curiosity'] = cyc
