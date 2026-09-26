@@ -36,8 +36,11 @@ def pending(sb, identity, limit: int = 20) -> list[dict]:
 
     # 2) 워커가 찾아와 격리된 관측
     try:
+        # 이 표의 시각 열은 created_at 이 아니라 seen_at 이다.
+        # 틀린 열을 읽으면 조회가 통째로 실패하고, 예외를 삼키면
+        # '워커가 찾은 것'이 목록에 한 건도 안 뜬다 (실제로 그랬다).
         rows = (sb.table("organism_observations")
-                .select("id,topic,title,text,url,status,score,created_at")
+                .select("id,topic,title,text,url,status,score,seen_at")
                 .eq("status", "quarantine")
                 .order("id", desc=True).limit(limit).execute().data) or []
         for r in rows:
@@ -47,10 +50,12 @@ def pending(sb, identity, limit: int = 20) -> list[dict]:
                 "title": (r.get("title") or r.get("text") or "")[:80],
                 "reason": f"{r.get('topic','')} · 점수 {round(r.get('score') or 0, 2)}",
                 "url": r.get("url"),
-                "at": r.get("created_at"),
+                "at": r.get("seen_at"),
             })
-    except Exception:
-        pass
+    except Exception as e:
+        out.append({"where": "error", "id": 0,
+                    "title": f"워커 검토함 읽기 실패: {str(e)[:80]}",
+                    "reason": "", "url": None, "at": ""})
 
     out.sort(key=lambda x: str(x.get("at") or ""), reverse=True)
     return out[:limit]
