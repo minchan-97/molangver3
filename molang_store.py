@@ -51,8 +51,24 @@ class SupabaseIdentity:
     # ---------- 로드 ----------
 
     def reload(self):
-        idn = self.sb.table('molang_identity').select('*').eq('id', 1) \
-                  .maybe_single().execute().data
+        # maybe_single()은 행이 0개일 때 라이브러리 판에 따라 예외를 던지거나
+        # None을 돌려준다. 첫 실행(빈 테이블)에서 앱이 죽지 않도록 감싸고,
+        # 없으면 기본 행을 만들어 둔다.
+        idn = None
+        try:
+            res = self.sb.table('molang_identity').select('*').eq('id', 1) \
+                      .limit(1).execute()
+            rows = getattr(res, 'data', None) or []
+            idn = rows[0] if rows else None
+        except Exception:
+            idn = None
+        if idn is None:
+            try:
+                self.sb.table('molang_identity').insert(
+                    {'id': 1, 'persona': '', 'values': [], 'rules': [],
+                     'version': 1}).execute()
+            except Exception:
+                pass
         if idn:
             self.persona = idn.get('persona') or ''
             self.values = idn.get('values') or []
@@ -60,13 +76,20 @@ class SupabaseIdentity:
             self._identity_version = idn.get('version', 1)
 
         # 만료·소멸 제외된 뷰에서만 읽는다
-        self._facts = self.sb.table('molang_facts_active') \
-            .select('id,text,norm_key,kind,strength,trust,seen,source,expires_at') \
-            .order('strength', desc=True).limit(400).execute().data or []
+        try:
+            self._facts = self.sb.table('molang_facts_active') \
+                .select('id,text,norm_key,kind,strength,trust,seen,source,expires_at') \
+                .order('strength', desc=True).limit(400).execute().data or []
+        except Exception as e:      # 뷰가 아직 없으면 알려주고 빈 상태로 시작
+            self._facts = []
+            self._load_error = f"molang_facts_active 읽기 실패: {e}"
 
-        eps = self.sb.table('molang_episodes') \
-            .select('question,answer').order('id', desc=True) \
-            .limit(self.recent_episodes).execute().data or []
+        try:
+            eps = self.sb.table('molang_episodes') \
+                .select('question,answer').order('id', desc=True) \
+                .limit(self.recent_episodes).execute().data or []
+        except Exception:
+            eps = []
         self._episodic = [f"Q: {(e.get('question') or '')[:60]} / "
                           f"A: {(e.get('answer') or '')[:80]}"
                           for e in reversed(eps)]
