@@ -74,6 +74,10 @@ if "unified" not in st.session_state:
     skin.install_molang_persona(u)           # 몰랑이 옷 입힘 (기본값)
     # 정체성을 서버로. skin 다음에 붙여야 DB의 persona 가 이긴다.
     u.identity = SupabaseIdentity(sb)
+    # 사고 트리(판단 구조)도 서버에서 복원 — 없으면 기본 유형으로 시작
+    import registry_store
+    _n = registry_store.load_into(sb, u.registry)
+    st.session_state._tree_restored = _n
     st.session_state.unified = u
     st.session_state.chat = [("molang", "안녕! 나 몰랑이야 🐰💗 오늘 어땠어?", "기쁨")]
 
@@ -97,7 +101,8 @@ with st.sidebar:
 
     # 이제 정체성은 서버(Supabase)에 있다. pkl 은 '처음 한 번 옮기기'에만 쓴다.
     _facts_n = len(u.identity.learned_facts)
-    st.caption(f"☁️ 서버 연결됨 · 사실 {_facts_n}개 · 대화 {len(u.identity.episodic)}회")
+    st.caption(f"☁️ 서버 연결됨 · 사실 {_facts_n}개 · 대화 {len(u.identity.episodic)}회 "
+               f"· 사고유형 {len(u.registry.trees)}개")
     if _facts_n == 0:
         with st.expander("📦 예전 몰랑이(pkl) 한 번만 옮기기"):
             up = st.file_uploader("molang.pkl", type=None, key="mig_pkl")
@@ -181,11 +186,31 @@ with st.sidebar:
                 c.caption(f"{emo}?")
 
     st.markdown("---")
-    # pkl 다운로드 (보관) — Arcogit + 표정 통째로
-    pkl_bytes = persist.save_molang_bytes(u)
-    st.download_button("⬇️ 백업 받기 (.pkl)", data=pkl_bytes,
-                       file_name="molang.pkl", mime="application/octet-stream")
-    st.caption("대화할수록 몰랑이가 자라요.\n저장해서 다음에 불러오면 이어져요 💗")
+    # 정체성이 서버에 있으면 pkl 로는 저장할 수 없다(접속 객체는 pickle 불가).
+    # 서버판에서는 내용만 JSON 으로 내려받는다. 어차피 원본은 Supabase 다.
+    if isinstance(u.identity, SupabaseIdentity):
+        import json as _json
+        try:
+            _backup = {
+                "persona": u.identity.persona,
+                "values": u.identity.values,
+                "rules": u.identity.judgment_rules,
+                "facts": [{"text": f.get("text"), "strength": f.get("strength"),
+                           "source": f.get("source")} for f in u.identity.learned_facts],
+                "episodes": list(u.identity.episodic)[-100:],
+            }
+            st.download_button(
+                "⬇️ 백업 받기 (.json)",
+                data=_json.dumps(_backup, ensure_ascii=False, indent=2),
+                file_name="molang_backup.json", mime="application/json")
+            st.caption("정체성은 서버에 있어요. 이건 읽기용 사본이에요 💗")
+        except Exception as e:
+            st.caption(f"백업 준비 실패: {e}")
+    else:
+        pkl_bytes = persist.save_molang_bytes(u)
+        st.download_button("⬇️ 백업 받기 (.pkl)", data=pkl_bytes,
+                           file_name="molang.pkl", mime="application/octet-stream")
+        st.caption("대화할수록 몰랑이가 자라요.\n저장해서 다음에 불러오면 이어져요 💗")
 
 # ── 헤더 (현재 감정 프로필) ──
 last_emo = st.session_state.chat[-1][2] if st.session_state.chat else "기쁨"
@@ -266,6 +291,11 @@ if msg or photo:
         except Exception:
             pass
         u.last_talk_ts = _time.time()   # 시간 동기화용
+        try:                     # 대화로 바뀐 판단 구조를 서버에 남긴다
+            import registry_store
+            registry_store.save(sb, u.registry)
+        except Exception:
+            pass
         mself.build_self_model(u)   # 자기 인식 갱신
 
     st.session_state.chat.append(("molang", answer, emotion))
