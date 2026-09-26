@@ -92,6 +92,20 @@ if "unified" not in st.session_state:
 
 u = st.session_state.unified
 
+
+# 위젯 키를 이 실행 안에서 유일하게 만든다.
+# (같은 블록이 실수로 두 번 들어가도 앱이 통째로 죽지 않게 — 화면만 두 번 보인다)
+_USED_KEYS = set()
+
+
+def uk(name: str) -> str:
+    k = name
+    while k in _USED_KEYS:
+        k += "_x"
+    _USED_KEYS.add(k)
+    return k
+
+
 # 몰랑이가 먼저 걸어둔 말이 있으면 대화에 얹는다 (자율 발화)
 if not st.session_state.get("_nudge_checked"):
     st.session_state["_nudge_checked"] = True
@@ -129,8 +143,8 @@ with st.sidebar:
         if True:
             st.caption(f"지금 표정 {_faces_n}개. pkl 을 올리면 표정과 외형만 꺼내 "
                        "서버에 넣어요. 사실·기억은 건드리지 않아요.")
-            _fup = st.file_uploader("표정이 든 molang.pkl", key="skin_pkl")
-            if _fup and st.button("표정만 가져오기"):
+            _fup = st.file_uploader("표정이 든 molang.pkl", key=uk("skin_pkl"))
+            if _fup and st.button("표정만 가져오기", key=uk("skin_btn")):
                 try:
                     import skin_store
                     _old = persist.load_molang_bytes(_fup.getvalue())
@@ -154,8 +168,8 @@ with st.sidebar:
                f"· 표정 {len(getattr(u, 'molang_faces', {}) or {})}개")
     with st.expander("📦 예전 몰랑이(pkl) 옮기기", expanded=(_facts_n == 0)):
         if True:
-            up = st.file_uploader("사실이 든 molang.pkl", key="mig_pkl")
-            if up and st.button("서버로 옮기기"):
+            up = st.file_uploader("사실이 든 molang.pkl", key=uk("mig_pkl"))
+            if up and st.button("서버로 옮기기", key=uk("mig_btn")):
                 try:
                     old = persist.load_molang_bytes(up.getvalue())
                     n = 0
@@ -223,7 +237,7 @@ with st.sidebar:
     st.markdown("---")
     st.caption("처음이면: 몰랑이 사진 → 외형학습 → 표정생성")
     base_img = st.file_uploader("기본 몰랑이 사진", type=["png","jpg","jpeg","webp","gif","bmp"])
-    if base_img and st.button("① 외형 학습"):
+    if base_img and st.button("① 외형 학습", key=uk("appearance_btn")):
         with st.spinner("얼굴 익히는 중..."):
             b64 = base64.b64encode(base_img.getvalue()).decode()
             feat = skin.extract_appearance(client, b64, base_img.type)
@@ -233,7 +247,7 @@ with st.sidebar:
                 st.success("외형 기억 완료!")
             else: st.error("실패 (API키 확인)")
 
-    if skin.has_appearance(u) and st.button("② 표정 5종 생성"):
+    if skin.has_appearance(u) and st.button("② 표정 5종 생성", key=uk("faces_btn")):
         prog = st.progress(0.0)
         fails = []
         last_err = None
