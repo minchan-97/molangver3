@@ -27,6 +27,27 @@ TRUST_STRENGTH = {'human': 1.0, 'derived': 0.6, 'doubted': 0.2}
 ABSORBABLE = {'user'}
 
 
+def _closer_to_answer(fact: str, question: str, answer: str) -> bool:
+    """
+    사실이 사용자의 말이 아니라 몰랑이의 답변에서 나온 것인가.
+
+    백업에서 확인된 실제 오염:
+      질문 "너가 공부한거 말이야" → 몰랑이가 자기 공부를 답함
+      → 저장된 사실 "사용자는 새로운 공부법과 시간 관리에 대해 연구했다"
+    주어만 바꿔치기된 것이므로, 낱말 겹침으로 잡을 수 있다.
+    """
+    import re
+    w = lambda t: set(re.findall(r'[가-힣A-Za-z]{2,}', t or ''))
+    f, q, a = w(fact), w(question), w(answer)
+    f = f - {'사용자', '사람', '그것', '이것'}
+    if not f:
+        return False
+    in_q = len(f & q) / len(f)
+    in_a = len(f & a) / len(f)
+    # 답변에는 많이 겹치고 사용자 말에는 거의 안 겹치면 = 몰랑이 얘기
+    return in_a >= 0.5 and in_a > in_q * 1.5
+
+
 class RejectedWrite(Exception):
     """격리 규칙에 의해 차단된 쓰기."""
 
@@ -184,9 +205,17 @@ class SupabaseIdentity:
                     fact = (result.get('fact') or '').strip()
                     conflict = result.get('conflicts_with')
                     if fact and fact.upper() != 'NONE':
-                        if conflict:
-                            self._weaken(conflict)
-                        self._reinforce_or_add(fact, source='user')
+                        # 사실이 사용자 말보다 몰랑이 답변에 더 가까우면
+                        # 그건 몰랑이가 자기 얘기를 한 것이다 → 사용자 사실이 아님.
+                        if _closer_to_answer(fact, question, answer):
+                            self._quarantine(
+                                fact, 'assistant_echo',
+                                {'question': question[:200],
+                                 'answer': (answer or '')[:200]})
+                        else:
+                            if conflict:
+                                self._weaken(conflict)
+                            self._reinforce_or_add(fact, source='user')
                 elif result and str(result).strip().upper() != 'NONE':
                     self._reinforce_or_add(str(result).strip(), source='user')
             except Exception:
