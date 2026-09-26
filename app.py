@@ -131,6 +131,9 @@ if not st.session_state.get("_nudge_checked"):
             for _w in _waiting:
                 st.session_state.chat.append(("molang", _w["body"], "기쁨"))
             outbox.mark_sent(sb, [_w["id"] for _w in _waiting])
+            # 무엇을 보자고 한 건지 실체를 들고 있는다
+            if any(w.get("rule") == "new_finding" for w in _waiting):
+                st.session_state["_offer"] = outbox.latest_finding(sb)
     except Exception:
         pass
 
@@ -192,10 +195,10 @@ with st.sidebar:
                         try:
                             u.identity._reinforce_or_add(
                                 f["text"] if isinstance(f, dict) else str(f),
-                                source="migration")
+                                source="user")   # 허용값: user/assistant/search/nudge
                             n += 1
-                        except Exception:
-                            pass
+                        except Exception as _e:
+                            st.caption(f"건너뜀: {str(_e)[:80]}")
                     if getattr(old.identity, "persona", None):
                         u.identity.persona = old.identity.persona
                         u.identity.save_identity()
@@ -386,7 +389,23 @@ if msg or photo:
             result = None
         else:
             bg = self_ctx + ((" " + time_ctx) if time_ctx else "")
-            q_with_time = f"사용자가 방금 한 말: \"{q}\"\n{bg}"
+            # 최근 대화를 맥락으로 — 이게 없으면 몰랑이가 자기가 방금 한 말도 모른다
+            _recent_lines = []
+            for _r, _t, _ in st.session_state.chat[-7:-1]:
+                _who = "나(몰랑이)" if _r == "molang" else "사용자"
+                _recent_lines.append(f"{_who}: {_t[:120]}")
+            _hist = "\n".join(_recent_lines)
+            # 내가 먼저 보여주겠다고 한 것이 있으면 그 실체도 같이
+            _off = st.session_state.get("_offer") or {}
+            _offer_txt = ""
+            if _off:
+                _offer_txt = ("\n[내가 방금 보여주겠다고 한 것]\n"
+                              f"주제: {_off.get('topic','')}\n"
+                              f"제목: {_off.get('title','')}\n"
+                              f"내용: {(_off.get('text') or '')[:400]}\n"
+                              f"주소: {_off.get('url','')}")
+            q_with_time = (f"[최근 대화]\n{_hist}\n\n"
+                           f"사용자가 방금 한 말: \"{q}\"{_offer_txt}\n{bg}")
             result = u.think(q_with_time, choose_fn=choose_fn, answer_fn=answer_fn,
                              classify_fn=classify_fn, tree_factory=designer)
             answer = result["answer"] or "히힛 🐰"
@@ -439,4 +458,3 @@ if msg or photo:
     if photo:
         st.session_state.photo_key += 1   # 업로더 리셋 → 같은 사진 재반응 방지
     st.rerun()
-
