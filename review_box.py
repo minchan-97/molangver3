@@ -112,3 +112,4 @@ def counts(sb, identity) -> dict:
     except Exception:
         pass
     return {"fact": n_fact, "observation": n_obs, "total": n_fact + n_obs}
+
