@@ -53,6 +53,7 @@ class OrganismStore:
         s.transition_counts = {k: int(v) for k, v
                                in (row.get('transition_counts') or {}).items()}
         s.last_topic = row.get('last_topic') or ''
+        s.musings = row.get('musings') or []
 
         obs = self.sb.table('organism_observations') \
             .select('uid,topic,title,text,url,status,score,source_trust,'
@@ -106,6 +107,14 @@ class OrganismStore:
 
     def push_state(self, s: OrganismState, mode: str):
         """version CAS. 시간당/야간 워커가 겹쳐도 한쪽만 이긴다."""
+        # musings(조용한 생각의 흔적)는 RPC 목록에 없어서 매번 사라졌다.
+        # CAS 뒤에 따로 올린다. 실패해도 본 상태 저장은 막지 않는다.
+        try:
+            if getattr(s, 'musings', None):
+                self.sb.table('organism_state').update(
+                    {'musings': s.musings[-200:]}).eq('id', 1).execute()
+        except Exception as e:
+            print('musings 저장 건너뜀:', str(e)[:80])
         self.sb.rpc('organism_commit_state', {
             'p_version': self._version,
             'p_cycle': s.cycle,
