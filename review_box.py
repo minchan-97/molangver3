@@ -56,28 +56,46 @@ def pending(sb, identity, limit: int = 20) -> list[dict]:
     return out[:limit]
 
 
-def approve(sb, identity, item) -> bool:
+def approve(sb, identity, item) -> dict:
+    """
+    승인. 격리 항목은 molang_quarantine 에 있으므로 거기를 닫고,
+    내용을 실제 사실로 올린다.
+    (identity.approve() 는 molang_facts 의 id 를 받는다 — 격리 id 와 다르다.
+     이걸 혼동해서 눌러도 목록이 안 줄어들었다)
+    """
     try:
         if item["where"] == "fact":
-            identity.approve(item["id"])
+            sb.table("molang_quarantine").update(
+                {"resolved": "approved"}).eq("id", item["id"]).execute()
+            text = (item.get("title") or "").strip()
+            if text:
+                identity._reinforce_or_add(text, source="human")
+                # 사람이 승인한 것은 바로 확신으로
+                rows = (sb.table("molang_facts").select("id")
+                        .eq("text", text).limit(1).execute().data) or []
+                if rows:
+                    identity.approve(rows[0]["id"])
+            identity.reload()
         else:
             sb.table("organism_observations").update(
                 {"status": "candidate"}).eq("id", item["id"]).execute()
-        return True
-    except Exception:
-        return False
+        return {"ok": True}
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:200]}
 
 
-def reject(sb, identity, item) -> bool:
+def reject(sb, identity, item) -> dict:
     try:
         if item["where"] == "fact":
-            identity.doubt(item["id"])
+            sb.table("molang_quarantine").update(
+                {"resolved": "rejected"}).eq("id", item["id"]).execute()
+            identity.reload()
         else:
             sb.table("organism_observations").update(
                 {"status": "reject"}).eq("id", item["id"]).execute()
-        return True
-    except Exception:
-        return False
+        return {"ok": True}
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:200]}
 
 
 def counts(sb, identity) -> dict:
@@ -94,4 +112,3 @@ def counts(sb, identity) -> dict:
     except Exception:
         pass
     return {"fact": n_fact, "observation": n_obs, "total": n_fact + n_obs}
-
