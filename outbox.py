@@ -122,9 +122,10 @@ def collect_signals(sb, identity=None, registry=None) -> list[dict]:
 
 TEMPLATES = {
     "new_finding": "{topic} 찾아보다가 이런 걸 봤어. \"{detail}\" 같이 볼래?",
-    "pending": "내가 찾아온 것 중에 {n}개가 아직 확실하지 않아. 같이 봐줄래?",
-    "unsure": "이거 맞는지 아직 잘 모르겠어. \"{detail}\" 맞아?",
-    "grew": "요즘 생각하는 방식이 조금 달라진 것 같아. 판단 단계가 {n}개 늘었어.",
+    "pending": "내가 모아둔 것 중 {n}개는 아직 확실하지 않아서 옆에 놔뒀어. "
+               "시간 될 때 왼쪽 검토 칸에서 봐줘.",
+    "unsure": "이거 맞는지 아직 잘 모르겠어. \"{detail}\" 이거 맞아?",
+    "grew": "요즘 생각하는 방식이 조금 달라진 것 같아. 내 판단 단계가 {n}개 늘었더라.",
     "absence": "오늘은 어땠어? 나는 혼자 이것저것 찾아봤어.",
 }
 
@@ -143,9 +144,16 @@ POLISH = """너는 몰랑이(흰 토끼)다. 지금 **네가 먼저** 사용자�
 출력: 나 화산 찾아보다가 "용암 동굴의 생물" 이런 걸 봤어, 같이 볼래? 🐰"""
 
 
+# 몰랑이가 한 일을 사용자가 한 일로 뒤집는 표현 (실제로 두 번 나왔다)
+FLIPPED = ("너가 찾", "네가 찾", "너가 알아", "네가 알아", "너가 봤", "네가 봤",
+           "보여줘도", "네가 찾아온", "너가 찾아온")
+
+
 def _keep_core(original: str, polished: str) -> bool:
-    """다듬은 말이 원래 알맹이를 지켰는지 (따옴표 내용·숫자)."""
+    """다듬은 말이 원래 알맹이와 **화자**를 지켰는지."""
     import re
+    if any(f in polished for f in FLIPPED):
+        return False                      # 주어가 뒤집힘 → 원문을 쓴다
     core = re.findall(r'"([^"]+)"', original)
     for c in core:
         head = c.strip()[:8]
