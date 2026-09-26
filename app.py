@@ -20,6 +20,19 @@ import molang_persist as persist
 
 st.set_page_config(page_title="몰랑이 💗", page_icon="🐰", layout="centered")
 
+# ── Supabase 연결 + 비밀번호 게이트 (어떤 데이터 접근보다 앞) ──
+from supabase import create_client
+import molang_auth
+from molang_store import SupabaseIdentity
+
+@st.cache_resource
+def _sb():
+    return create_client(st.secrets["SUPABASE_URL"],
+                         st.secrets["SUPABASE_SERVICE_KEY"])
+
+sb = _sb()
+molang_auth.gate(sb)          # 통과 못 하면 여기서 멈춤
+
 st.markdown("""
 <style>
 .stApp { background:#b2c7d9; }
@@ -37,17 +50,17 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# API 키: 매번 입력 (사이드바)
+# API 키: secrets 에 있으면 그걸 쓰고, 없을 때만 물어본다
 if "api_key" not in st.session_state:
-    st.session_state.api_key = ""
-
-with st.sidebar:
-    st.session_state.api_key = st.text_input(
-        "🔑 OpenAI API 키", value=st.session_state.api_key,
-        type="password", placeholder="sk-...")
+    st.session_state.api_key = st.secrets.get("OPENAI_API_KEY", "")
 
 if not st.session_state.api_key:
-    st.info("🔑 왼쪽에 OpenAI API 키를 넣으면 몰랑이가 깨어나요 🐰")
+    with st.sidebar:
+        st.session_state.api_key = st.text_input(
+            "🔑 OpenAI API 키", type="password", placeholder="sk-...")
+
+if not st.session_state.api_key:
+    st.info("🔑 secrets.toml 에 OPENAI_API_KEY 를 넣어주세요 🐰")
     st.stop()
 
 client = OpenAI(api_key=st.session_state.api_key)
@@ -58,7 +71,9 @@ def dataurl(b64): return f"data:image/png;base64,{b64}"
 if "unified" not in st.session_state:
     u = UnifiedIdentity()
     load_logic_db_types(u.registry)          # 20종 논리 유형 탑재
-    skin.install_molang_persona(u)           # 몰랑이 옷 입힘
+    skin.install_molang_persona(u)           # 몰랑이 옷 입힘 (기본값)
+    # 정체성을 서버로. skin 다음에 붙여야 DB의 persona 가 이긴다.
+    u.identity = SupabaseIdentity(sb)
     st.session_state.unified = u
     st.session_state.chat = [("molang", "안녕! 나 몰랑이야 🐰💗 오늘 어땠어?", "기쁨")]
 
@@ -80,15 +95,47 @@ def profile_for(emotion):
 with st.sidebar:
     st.markdown("### 🐰 몰랑이 준비")
 
-    # pkl 업로드 (이어가기)
-    up = st.file_uploader("💾 저장된 몰랑이 불러오기", type=None)
-    if up and st.button("불러오기"):
-        try:
-            st.session_state.unified = persist.load_molang_bytes(up.getvalue())
-            st.session_state.chat = [("molang","다시 만나서 반가워! 🐰💗","기쁨")]
-            st.success("몰랑이가 돌아왔어요!"); st.rerun()
-        except Exception as e:
-            st.error(f"불러오기 실패: {e} (몰랑이 pkl 파일이 맞는지 확인해줘)")
+    # 이제 정체성은 서버(Supabase)에 있다. pkl 은 '처음 한 번 옮기기'에만 쓴다.
+    _facts_n = len(u.identity.learned_facts)
+    st.caption(f"☁️ 서버 연결됨 · 사실 {_facts_n}개 · 대화 {len(u.identity.episodic)}회")
+    if _facts_n == 0:
+        with st.expander("📦 예전 몰랑이(pkl) 한 번만 옮기기"):
+            up = st.file_uploader("molang.pkl", type=None, key="mig_pkl")
+            if up and st.button("서버로 옮기기"):
+                try:
+                    old = persist.load_molang_bytes(up.getvalue())
+                    n = 0
+                    for f in (getattr(old.identity, "learned_facts", []) or []):
+                        try:
+                            u.identity._reinforce_or_add(
+                                f["text"] if isinstance(f, dict) else str(f),
+                                source="migration")
+                            n += 1
+                        except Exception:
+                            pass
+                    if getattr(old.identity, "persona", None):
+                        u.identity.persona = old.identity.persona
+                        u.identity.save_identity()
+                    st.success(f"사실 {n}개를 서버로 옮겼어요. 이제 pkl 은 필요 없어요.")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"옮기기 실패: {e}")
+
+    _q = []
+    try:
+        _q = u.identity.pending_quarantine(20)
+    except Exception:
+        pass
+    if _q:
+        st.markdown(f"### 🧪 검토 대기 {len(_q)}")
+        st.caption("몰랑이가 확신하기 전에 사람에게 묻는 것들이에요.")
+        for _item in _q[:5]:
+            c1, c2, c3 = st.columns([5, 1, 1])
+            c1.caption(f"{_item.get('reason','')} · {str(_item.get('text',''))[:40]}")
+            if c2.button("○", key=f"ok_{_item['id']}", help="맞아요"):
+                u.identity.approve(_item["id"]); st.rerun()
+            if c3.button("×", key=f"no_{_item['id']}", help="아니에요"):
+                u.identity.doubt(_item["id"]); st.rerun()
 
     st.markdown("---")
     st.caption("처음이면: 몰랑이 사진 → 외형학습 → 표정생성")
@@ -136,7 +183,7 @@ with st.sidebar:
     st.markdown("---")
     # pkl 다운로드 (보관) — Arcogit + 표정 통째로
     pkl_bytes = persist.save_molang_bytes(u)
-    st.download_button("⬇️ 몰랑이 저장 (.pkl)", data=pkl_bytes,
+    st.download_button("⬇️ 백업 받기 (.pkl)", data=pkl_bytes,
                        file_name="molang.pkl", mime="application/octet-stream")
     st.caption("대화할수록 몰랑이가 자라요.\n저장해서 다음에 불러오면 이어져요 💗")
 
@@ -210,7 +257,14 @@ if msg or photo:
             u.react(result, fb_val if fb_val is not None else 0.5,
                     was_corrected=(fb_val is not None and fb_val>0))
         # 대화 맥락은 정체성 기억에 흡수
-        u.identity.absorb(show, answer, consolidate_fn=consolidate_fn)
+        u.identity.absorb(show, answer, consolidate_fn=consolidate_fn,
+                          source="user", emotion=emotion)
+        try:                       # 판단 경로를 감사 기록으로 (사고 계보)
+            u.identity.audit(type_id=(result["type"] if result else "vision"),
+                             path=(result["path"] if result else []),
+                             answer=answer)
+        except Exception:
+            pass
         u.last_talk_ts = _time.time()   # 시간 동기화용
         mself.build_self_model(u)   # 자기 인식 갱신
 
