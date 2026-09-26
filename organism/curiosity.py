@@ -39,6 +39,8 @@ TALK_WORDS = {
     '있어', '없어', '같아', '맞아', '좋아', '싫어', '알아', '몰라', '했어',
     '한다', '하자', '해봐', '보자', '어떤', '무슨', '어디', '언제', '누가',
     '진짜', '정말', '완전', '너무', '조금', '아직', '이제', '다시', '계속',
+    '오늘', '어제', '내일', '지금', '아까', '나중', '요즘', '평소', '가끔',
+    '궁금해', '좋아해', '싫어해', '재밌어', '신기해', '너의', '나의', '우리의',
     'strong', 'quot', 'href', 'http', 'https', 'www', 'span', 'div', 'amp',
     'nbsp', 'br', 'em', 'li', 'ul',
 }
@@ -50,6 +52,44 @@ STOP_EXACT = {'그리고', '하지만', '또한', '이는', '그것', '우리', 
 HAS_DIGIT = re.compile(r'\d')
 
 
+def _looks_proper(t: str) -> bool:
+    """
+    고유명사처럼 보이는가 — 가수 이름, 작품 이름, 브랜드.
+    사전이 없으니 형태로 짐작한다: 흔한 말이 아니고, 조사·어미가 안 붙고,
+    2~6글자인 것. ('한로로', '몰랑이' 같은 것)
+    """
+    if not (2 <= len(t) <= 6):
+        return False
+    if t.endswith(STOP_SUFFIX) or t in STOP_EXACT or t in TALK_WORDS:
+        return False
+    if HAS_DIGIT.search(t):
+        return False
+    # 서술어·감탄 어미로 끝나면 이름이 아니다 ('궁금해', '좋아', '먹지')
+    if t[-1] in '해야어지다네요까게고죠임됨':
+        return False
+    return bool(re.fullmatch(r'[가-힣]+', t)) and t == strip_josa(t)
+
+
+JOSA = ('으로', '에서', '에게', '한테', '까지', '부터', '이랑', '하고',
+        '들이', '들은', '들을', '들의', '이다', '이야', '예요', '에요',
+        '은', '는', '이', '가', '을', '를', '에', '의', '도', '만', '과', '와', '로')
+
+
+def strip_josa(t: str) -> str:
+    """
+    조사를 벗겨 원래 낱말로. '우주에' 와 '우주' 가 따로 쌓이면
+    같은 관심이 둘로 갈려 둘 다 약해진다.
+    두 글자 이상 남을 때만 벗긴다 ('나는' → '나' 처럼 되지 않게).
+    """
+    # '한로로' 처럼 끝 두 글자가 같으면 벗기지 않는다 (이름일 가능성)
+    if len(t) >= 3 and t[-1] == t[-2]:
+        return t
+    for j in sorted(JOSA, key=len, reverse=True):
+        if t.endswith(j) and len(t) - len(j) >= 2:
+            return t[:-len(j)]
+    return t
+
+
 def _is_topic_like(t: str) -> bool:
     if len(t) < 2 or len(t) > 12:
         return False
@@ -57,6 +97,8 @@ def _is_topic_like(t: str) -> bool:
         return False
     if t in TALK_WORDS:
         return False
+    if _looks_proper(t):
+        return True          # 가수·작품 이름 같은 고유명사는 살린다
     if t in STOP_EXACT:
         return False
     if t.endswith(STOP_SUFFIX):
@@ -137,6 +179,7 @@ def nudge_interests(state, texts, weight=None, min_mentions=None):
     freq = {}
     for text in texts:
         for t in tokens(text or ''):
+            t = strip_josa(t)          # '우주에' 와 '우주' 를 한 관심으로
             if _is_topic_like(t):
                 freq[t] = freq.get(t, 0) + 1
 
