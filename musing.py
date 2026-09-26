@@ -86,6 +86,12 @@ def settle(state, decay=0.985, floor=0.02):
 
     dropped, faded = [], 0
     for t in list((state.interests or {}).keys()):
+        # 띄어쓰기가 있어도 말투면 버린다 ('있어 파스타' 같은 붙은 조각)
+        parts = [p for p in t.split() if p]
+        if len(parts) > 1 and not all(_is_topic_like(p) for p in parts):
+            state.interests.pop(t, None)
+            dropped.append(t)
+            continue
         if not _is_topic_like(t) and " " not in t:
             state.interests.pop(t, None)
             dropped.append(t)
