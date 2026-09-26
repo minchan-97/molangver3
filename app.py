@@ -252,6 +252,9 @@ with st.sidebar:
         st.caption("지금은 없어요. 대화하거나 워커가 돌면 여기에 쌓여요.")
     else:
         for _item in _q[:8]:
+            if _item["where"] == "error":       # 읽기 실패는 버튼 없이 알림만
+                st.error(_item["title"])
+                continue
             c1, c2, c3 = st.columns([5, 1, 1])
             _mark = "💬" if _item["where"] == "fact" else "🔎"
             c1.caption(f"{_mark} {_item['title']}")
