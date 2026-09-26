@@ -129,7 +129,7 @@ with st.sidebar:
         if True:
             st.caption(f"지금 표정 {_faces_n}개. pkl 을 올리면 표정과 외형만 꺼내 "
                        "서버에 넣어요. 사실·기억은 건드리지 않아요.")
-            _fup = st.file_uploader("molang.pkl", type=None, key="skin_pkl")
+            _fup = st.file_uploader("표정이 든 molang.pkl", key="skin_pkl")
             if _fup and st.button("표정만 가져오기"):
                 try:
                     import skin_store
@@ -154,7 +154,7 @@ with st.sidebar:
                f"· 표정 {len(getattr(u, 'molang_faces', {}) or {})}개")
     with st.expander("📦 예전 몰랑이(pkl) 옮기기", expanded=(_facts_n == 0)):
         if True:
-            up = st.file_uploader("molang.pkl", type=None, key="mig_pkl")
+            up = st.file_uploader("사실이 든 molang.pkl", key="mig_pkl")
             if up and st.button("서버로 옮기기"):
                 try:
                     old = persist.load_molang_bytes(up.getvalue())
@@ -401,4 +401,3 @@ if msg or photo:
     if photo:
         st.session_state.photo_key += 1   # 업로더 리셋 → 같은 사진 재반응 방지
     st.rerun()
-
