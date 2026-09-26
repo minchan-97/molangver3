@@ -128,8 +128,18 @@ def main(mode):
 
         cyc = None
         if mode in ('hourly', 'all'):
-            cyc = curiosity_cycle(state, store, deep=False)
-            out['curiosity'] = cyc
+            # 조용한 생각은 LLM 을 안 부른다 → 자주 돌려도 비용이 없다.
+            # 사람도 늘 생각하지만 그걸 매번 문장으로 만들지는 않는다.
+            import musing
+            out['musing'] = {k: v for k, v in
+                             musing.think(state, log=print).items()}
+            # 검색은 매번이 아니라 가끔 (기본 3회에 1번)
+            every = max(1, int(os.environ.get('SEARCH_EVERY', 3)))
+            if state.cycle % every == 0:
+                cyc = curiosity_cycle(state, store, deep=False)
+                out['curiosity'] = cyc
+            else:
+                out['curiosity'] = f'이번엔 생각만 (다음 검색까지 {every - (state.cycle % every)}회)'
             out['topology'] = maintenance(state)
 
         # 호기심이 사고 구조를 바꾸는 자리 — 승인된 근거를 트리에 먹이고,
@@ -165,6 +175,11 @@ def main(mode):
             out['deep_curiosity'] = cyc
             out['topology_night'] = maintenance(state)
             entry = reflect(state)
+            try:            # 조용한 생각의 흔적을 회고 재료로
+                import musing
+                entry['musing_context'] = musing.to_reflection_context(state)
+            except Exception:
+                pass
             store.record_reflection(entry)
             out['reflection'] = entry
 
