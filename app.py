@@ -174,6 +174,16 @@ with st.sidebar:
     import review_box
     _cnt = review_box.counts(sb, u.identity)
     _q = review_box.pending(sb, u.identity, 20)
+    # 호기심이 사고 구조를 얼마나 바꿨나
+    try:
+        _grown = sum(1 for t in u.registry.trees.values()
+                     for n in t.nodes if str(n).startswith("grown_"))
+        _tmem = sum(len(getattr(t, "memory", [])) for t in u.registry.trees.values())
+        if _grown or _tmem:
+            st.caption(f"🌳 사고 기억 {_tmem}개 · 스스로 늘린 판단 단계 {_grown}개")
+    except Exception:
+        pass
+
     _bump = st.session_state.get("_last_bumped")
     if _bump:
         st.caption(f"🌱 요즘 관심: {', '.join(_bump[:5])}")
