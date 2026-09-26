@@ -131,8 +131,10 @@ def main(mode):
             # 조용한 생각은 LLM 을 안 부른다 → 자주 돌려도 비용이 없다.
             # 사람도 늘 생각하지만 그걸 매번 문장으로 만들지는 않는다.
             import musing
-            out['musing'] = {k: v for k, v in
-                             musing.think(state, log=print).items()}
+            # 깨어난 김에 여러 번 생각한다 (러너 띄우는 값이 2분, 생각은 몇 ms)
+            out['musing'] = musing.think_many(
+                state, rounds=int(os.environ.get('MUSING_ROUNDS', 30)),
+                log=print)
             # 검색은 매번이 아니라 가끔 (기본 3회에 1번)
             every = max(1, int(os.environ.get('SEARCH_EVERY', 3)))
             if state.cycle % every == 0:
