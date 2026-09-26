@@ -116,13 +116,22 @@ def reflect(state):
 
 
 def _where():
-    """예외가 난 마지막 파일·줄 — '어디서 났는지'가 메시지보다 중요할 때가 많다."""
+    """
+    예외가 난 자리. 라이브러리 안쪽(site-packages)은 건너뛰고
+    **우리 코드의 마지막 줄**을 찍는다. 'secrets.py:324' 같은 건
+    누가 불렀는지 알려주지 않는다.
+    """
     import traceback
     tb = traceback.extract_tb(sys.exc_info()[2])
     if not tb:
         return '?'
-    f = tb[-1]
-    return f"{os.path.basename(f.filename)}:{f.lineno} in {f.name}"
+    ours = [f for f in tb
+            if ROOT in os.path.abspath(f.filename)
+            and 'site-packages' not in f.filename]
+    chain = [f"{os.path.basename(f.filename)}:{f.lineno}({f.name})"
+             for f in (ours or tb)[-3:]]
+    tail = tb[-1]
+    return " → ".join(chain) + f" ⇒ {os.path.basename(tail.filename)}:{tail.lineno}"
 
 
 def main(mode):
