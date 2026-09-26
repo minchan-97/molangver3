@@ -104,10 +104,11 @@ with st.sidebar:
     # 이제 정체성은 서버(Supabase)에 있다. pkl 은 '처음 한 번 옮기기'에만 쓴다.
     # 표정만 따로 옮기기 (사실은 이미 옮겼고 얼굴만 없을 때)
     _faces_n = len(getattr(u, "molang_faces", {}) or {})
-    if _faces_n == 0:
-        with st.expander("🐰 예전 몰랑이 얼굴 가져오기", expanded=True):
-            st.caption("pkl 을 올리면 표정과 외형만 꺼내서 서버에 넣어요. "
-                       "사실·기억은 건드리지 않아요.")
+    with st.expander("🐰 예전 몰랑이 얼굴 가져오기",
+                     expanded=(_faces_n == 0)):
+        if True:
+            st.caption(f"지금 표정 {_faces_n}개. pkl 을 올리면 표정과 외형만 꺼내 "
+                       "서버에 넣어요. 사실·기억은 건드리지 않아요.")
             _fup = st.file_uploader("molang.pkl", type=None, key="skin_pkl")
             if _fup and st.button("표정만 가져오기"):
                 try:
@@ -131,8 +132,8 @@ with st.sidebar:
     st.caption(f"☁️ 서버 연결됨 · 사실 {_facts_n}개 · 대화 {len(u.identity.episodic)}회 "
                f"· 사고유형 {len(u.registry.trees)}개 "
                f"· 표정 {len(getattr(u, 'molang_faces', {}) or {})}개")
-    if _facts_n == 0:
-        with st.expander("📦 예전 몰랑이(pkl) 한 번만 옮기기"):
+    with st.expander("📦 예전 몰랑이(pkl) 옮기기", expanded=(_facts_n == 0)):
+        if True:
             up = st.file_uploader("molang.pkl", type=None, key="mig_pkl")
             if up and st.button("서버로 옮기기"):
                 try:
@@ -161,15 +162,22 @@ with st.sidebar:
                 except Exception as e:
                     st.error(f"옮기기 실패: {e}")
 
-    _q = []
+    # 검토 대기 — 0건이어도 자리를 보여준다.
+    # (안 보이면 "기능이 없는 건가"와 "아직 쌓인 게 없는 건가"를 구분할 수 없다)
+    _q, _qerr = [], None
     try:
-        _q = u.identity.pending_quarantine(20)
-    except Exception:
-        pass
-    if _q:
-        st.markdown(f"### 🧪 검토 대기 {len(_q)}")
+        _q = u.identity.pending_quarantine(20) or []
+    except Exception as e:
+        _qerr = str(e)
+    st.markdown("---")
+    st.markdown(f"### 🧪 검토 대기 {len(_q)}")
+    if _qerr:
+        st.caption(f"읽기 실패: {_qerr[:60]}")
+    elif not _q:
+        st.caption("지금은 없어요. 대화하거나 워커가 돌면 여기에 쌓여요.")
+    else:
         st.caption("몰랑이가 확신하기 전에 사람에게 묻는 것들이에요.")
-        for _item in _q[:5]:
+        for _item in _q[:8]:
             c1, c2, c3 = st.columns([5, 1, 1])
             c1.caption(f"{_item.get('reason','')} · {str(_item.get('text',''))[:40]}")
             if c2.button("○", key=f"ok_{_item['id']}", help="맞아요"):
