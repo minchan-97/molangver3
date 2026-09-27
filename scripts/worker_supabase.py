@@ -169,6 +169,13 @@ def main(mode):
             if state.cycle % every == 0:
                 cyc = curiosity_cycle(state, store, deep=False)
                 out['curiosity'] = cyc
+                # 집에서 한 회차: 관심을 따라 움직이고, 머문 방의 결이 관심에 스민다
+                try:
+                    import home as _home
+                    out['home'] = _home.tick(store.sb, state)
+                except Exception as e:
+                    out['home'] = {'error': str(e)[:120]}
+
                 # 피우피우 — 함께 사는 노란 병아리.
                 # 검색이 도는 회차에만 같이 움직인다: 매 회차면 비용이 세 배,
                 # 밤에 한 번이면 둘이 같이 산다는 느낌이 안 난다. 하루 여덟 번쯤.
@@ -193,8 +200,14 @@ def main(mode):
                         store.record_observations(_pitems)
                     _piu = piupiu.identity(store.sb)
                     _mol = SupabaseIdentity(store.sb)
-                    _talk = piupiu.converse(store.sb, _mol, _piu, _seen,
-                                            os.environ.get('OPENAI_API_KEY'))
+                    _where = (out.get('home') or {})
+                    _mol.place = _where.get('molang')
+                    _piu.place = _where.get('piupiu')
+                    _talk = piupiu.converse(
+                        store.sb, _mol, _piu, _seen,
+                        os.environ.get('OPENAI_API_KEY'),
+                        place=_where.get('molang'),
+                        same_room=bool(_where.get('same_room')))
                     # 2) 관심이 서로 물든다
                     _bleed = piupiu.bleed_interests(state, {_ptopic: 1.0})
                     out['piupiu'] = {'topic': _ptopic, 'bleed': _bleed,
