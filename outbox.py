@@ -105,7 +105,19 @@ def collect_signals(sb, identity=None, registry=None) -> list[dict]:
         except Exception:
             pass
 
-    # 5) 오래 조용함
+    # 5) 문득 떠오른 옛일 — 아무도 묻지 않아도 꺼내는 이야기
+    if identity is not None:
+        try:
+            import reminisce
+            got = reminisce.pick(list(identity.learned_facts), n=1)
+            if got:
+                out.append({"rule": "reminisce", "weight": 2,
+                            "detail": reminisce.line(got[0]),
+                            "fact_id": got[0].get("id")})
+        except Exception:
+            pass
+
+    # 6) 오래 조용함
     try:
         rows = (sb.table("molang_episodes").select("created_at")
                 .order("id", desc=True).limit(1).execute().data) or []
@@ -127,6 +139,7 @@ TEMPLATES = {
     "unsure": "이거 맞는지 아직 잘 모르겠어. \"{detail}\" 이거 맞아?",
     "grew": "요즘 생각하는 방식이 조금 달라진 것 같아. 내 판단 단계가 {n}개 늘었더라.",
     "absence": "오늘은 어땠어? 나는 혼자 이것저것 찾아봤어.",
+    "reminisce": "{detail}",
 }
 
 # 다듬기는 '말투만' 손대게 한다. 화자를 뒤집거나 내용을 빼면 먼저 말 걸기가
@@ -201,7 +214,8 @@ def make(sb, identity=None, registry=None, api_key=None, log=print):
     sig = max(signals, key=lambda s: s["weight"])
 
     # 알맹이가 비어 있으면 그 계기는 건너뛴다 ('그거 찾다가 …' 같은 빈 말 방지)
-    if sig["rule"] in ("new_finding", "unsure") and not (sig.get("detail") or "").strip():
+    if sig["rule"] in ("new_finding", "unsure", "reminisce") \
+            and not (sig.get("detail") or "").strip():
         signals = [s2 for s2 in signals if s2 is not sig]
         if not signals:
             return None
@@ -262,4 +276,3 @@ def mark_sent(sb, ids: list[int]):
             {"sent_at": _now().isoformat()}).in_("id", ids).execute()
     except Exception:
         pass
-
