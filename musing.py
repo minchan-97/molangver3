@@ -207,3 +207,4 @@ def to_reflection_context(state, n=6) -> str:
         if c:
             lines.append("이어본 것: " + ", ".join("-".join(p) for p in c))
     return "\n".join(dict.fromkeys(lines))[:800]
+
