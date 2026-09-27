@@ -63,7 +63,7 @@ def _last_rule(sb):
         return None
 
 
-def collect_signals(sb, identity=None, registry=None) -> list[dict]:
+def collect_signals(sb, identity=None, registry=None, state=None) -> list[dict]:
     """지금 말을 걸 만한 계기들. 없으면 빈 목록."""
     out = []
 
@@ -148,7 +148,21 @@ def collect_signals(sb, identity=None, registry=None) -> list[dict]:
     except Exception:
         pass
 
-    # 8) 오래 조용함
+    # 8) 기분이 한쪽으로 치우쳤을 때
+    try:
+        import mood as _mood
+        h = _mood.recent(state, 1) if state is not None else []
+        if h and h[0].get("name") in ("심심함", "벅참"):
+            m = h[0]
+            out.append({"rule": "mood", "weight": 2,
+                        "detail": ("요즘 좀 심심해. 뭔가 새로운 얘기 없어?"
+                                   if m["name"] == "심심함" else
+                                   "아직 확실하지 않은 게 너무 많아서 좀 벅차. "
+                                   "같이 정리해줄래?")})
+    except Exception:
+        pass
+
+    # 9) 오래 조용함
     try:
         rows = (sb.table("molang_episodes").select("created_at")
                 .order("id", desc=True).limit(1).execute().data) or []
@@ -173,6 +187,7 @@ TEMPLATES = {
     "reminisce": "{detail}",
     "dream": "나 간밤에 이런 꿈을 꿨어. {detail}",
     "peer": "{detail}",
+    "mood": "{detail}",
 }
 
 # 다듬기는 '말투만' 손대게 한다. 화자를 뒤집거나 내용을 빼면 먼저 말 걸기가
@@ -231,14 +246,14 @@ def _polish(body: str, api_key: str, persona: str = "") -> str:
     return out
 
 
-def make(sb, identity=None, registry=None, api_key=None, log=print):
+def make(sb, identity=None, registry=None, api_key=None, state=None, log=print):
     """계기가 있으면 한 마디를 만들어 outbox 에 넣는다. 없으면 None."""
     if QUIET_HOURS[0] <= _now().hour < QUIET_HOURS[1]:
         return None
     if _sent_today(sb) >= MAX_PER_DAY:
         return None
 
-    signals = collect_signals(sb, identity, registry)
+    signals = collect_signals(sb, identity, registry, state)
     if not signals:
         return None
 
