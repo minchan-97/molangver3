@@ -175,3 +175,4 @@ def mark_told(sb, ids):
             .in_("id", list(ids)).execute()
     except Exception:
         pass
+
