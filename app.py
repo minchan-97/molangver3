@@ -251,6 +251,57 @@ with st.sidebar:
     if _bump:
         st.caption(f"🌱 요즘 관심: {', '.join(_bump[:5])}")
 
+    # 🏠 둘의 집 — 어디에 있고, 무엇을 놓아뒀고, 무엇이 바뀌었나
+    try:
+        import home as _home
+        _h = _home.load(sb)
+        _where = _h.get("where") or {}
+        _objs = _h.get("objects") or {}
+        _visits = _h.get("visits") or {}
+        _mx = max(1, max(_visits.values()) if _visits else 1)
+
+        st.markdown("---")
+        st.markdown("### 🏠 둘의 집")
+        _cells = []
+        for _r in _home.ROOMS:
+            _who = "".join(("🐰" if k == "molang" else "🐤")
+                           for k, v in _where.items() if v == _r)
+            _items = [o.get("name") for o in (_objs.get(_r) or [])][-3:]
+            # 자주 간 방일수록 진하게 — 머문 시간이 보이게
+            _warm = 0.10 + 0.55 * (_visits.get(_r, 0) / _mx)
+            _cells.append(
+                f'<div style="background:rgba(254,240,27,{_warm:.2f});'
+                'border:1px solid #cfcfcf;border-radius:10px;padding:7px 8px;'
+                'min-height:74px;">'
+                f'<div style="font-size:0.78rem;font-weight:700;color:#333;">'
+                f'{_r} <span style="float:right">{_who}</span></div>'
+                f'<div style="font-size:0.68rem;color:#666;line-height:1.35;'
+                'margin-top:3px;">'
+                + ("<br>".join("· " + str(i)[:10] for i in _items)
+                   if _items else "<span style=\"color:#aaa\">비어 있음</span>")
+                + "</div></div>")
+        st.markdown(
+            '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">'
+            + "".join(_cells) + "</div>", unsafe_allow_html=True)
+
+        _same = len(set(_where.values())) == 1 and len(_where) > 1
+        st.caption(("🐰🐤 같은 방에 있어요" if _same else
+                    f"🐰 {_where.get('molang','?')} · 🐤 {_where.get('piupiu','?')}"))
+
+        _log = (_h.get("log") or [])[-6:][::-1]
+        if _log:
+            with st.expander(f"🔨 집이 바뀐 자취 {len(_h.get('log') or [])}"):
+                for _e in _log:
+                    _wh = "🐰" if _e.get("who") == "molang" else "🐤"
+                    if _e.get("what") == "옮김":
+                        st.caption(f"{_wh} {_e.get('item')} 를 "
+                                   f"{_e.get('from')} → {_e.get('to')}")
+                    else:
+                        st.caption(f"{_wh} {_e.get('room')}에 "
+                                   f"{_e.get('item')} 를 놓았어요")
+    except Exception as _e:
+        st.caption(f"집을 못 불러왔어요: {str(_e)[:60]}")
+
     # 피우피우 — 사용자와 직접 말하지 않는다. 몰랑이가 전할 뿐.
     try:
         import piupiu
