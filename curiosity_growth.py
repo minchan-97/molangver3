@@ -156,6 +156,27 @@ def propose_type(registry, topics, api_key=None, model=None, log=print):
     return None
 
 
+MERGE_MIN_USES = 6          # 이만큼은 쓰여야 합칠 후보
+MERGE_MIN_MEM = 3           # 근거도 이만큼 쌓였을 때
+
+
+def merge_candidates(registry, log=print):
+    """
+    합칠 만한 짝 고르기.
+    둘 다 자주 쓰였고 근거도 쌓였다면, 그 둘은 한 사고의 앞뒤일 수 있다.
+    """
+    ranked = [(tid, registry.usage_count.get(tid, 0),
+               len(getattr(t, "memory", []) or []))
+              for tid, t in registry.trees.items()]
+    ranked = [r for r in ranked
+              if r[1] >= MERGE_MIN_USES and r[2] >= MERGE_MIN_MEM
+              and "__" not in r[0]]
+    ranked.sort(key=lambda r: -(r[1] + r[2]))
+    if len(ranked) < 2:
+        return None
+    return registry.merge_deep(ranked[0][0], ranked[1][0], log=log)
+
+
 def run(sb, registry, state=None, api_key=None, embed_fn=None, classify_fn=None,
         log=print):
     """세 갈래를 한 번에. 워커가 호출한다."""
