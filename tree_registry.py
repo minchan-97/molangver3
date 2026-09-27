@@ -134,7 +134,7 @@ class TreeRegistry:
                 best, best_score = tid, j
         return best if best_score >= thr else None
 
-    def wither(self, min_uses: int = 1, keep_recent: int = 3):
+    def wither(self, min_uses: int = 1, keep_recent: int = 2, max_types: int = 26):
         """
         오래 안 쓰인 자동생성 유형은 시들어 사라진다.
         늘기만 하고 줄지 않으면 그건 성장이 아니라 비대다.
@@ -143,15 +143,23 @@ class TreeRegistry:
         auto = [c["type_id"] for c in self.creation_log if not c.get("skipped")]
         protect = set(auto[-keep_recent:])
         gone = []
-        for tid in auto[:-keep_recent] if len(auto) > keep_recent else []:
+        # 유형이 많아질수록 경로가 흩어져 '깊어지기'가 영영 안 일어난다.
+        # 상한을 넘으면 덜 쓰인 것부터 놓아준다.
+        over = max(0, len(self.trees) - max_types)
+        pool = auto[:-keep_recent] if len(auto) > keep_recent else []
+        pool.sort(key=lambda k: (self.usage_count.get(k, 0),
+                                 len(getattr(self.trees.get(k), "memory", []) or [])))
+        for tid in pool:
+            if over <= 0 and self.usage_count.get(tid, 0) > min_uses:
+                continue
             if tid in protect or tid not in self.trees:
                 continue
-            if self.usage_count.get(tid, 0) <= min_uses:
-                mem = len(getattr(self.trees[tid], "memory", []))
-                if mem == 0:              # 근거까지 쌓였으면 남긴다
-                    self.trees.pop(tid, None)
-                    self.usage_count.pop(tid, None)
-                    gone.append(tid)
+            mem = len(getattr(self.trees[tid], "memory", []) or [])
+            if mem == 0 or over > 0:      # 근거가 쌓였으면 상한을 넘을 때만
+                self.trees.pop(tid, None)
+                self.usage_count.pop(tid, None)
+                gone.append(tid)
+                over -= 1
         return gone
 
     def create_from_design(self, design: dict, question: str,
@@ -350,4 +358,3 @@ def load_logic_db_types(registry, db_path: str = "logic_db.json"):
         registry.register_type(type_id, tree, examples=[entry["description"]])
         loaded += 1
     return loaded
-
