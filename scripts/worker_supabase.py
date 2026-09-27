@@ -185,6 +185,23 @@ def main(mode):
             out['growth'] = {'error': str(e)[:200],
                              'where': _where(), 'type': type(e).__name__}
 
+        # 목적이 아래에서부터 자란다 — 조건이 찼을 때만 제안, 승인은 사람이
+        try:
+            import purpose_growth, purpose as _p
+            _core = ''
+            try:
+                _core = (store.identity_prompt() or '').split(
+                    '[무엇을 향해 사는가]')[-1].split('\n')[0].strip()
+            except Exception:
+                _core = _p.PURPOSE
+            _sub = purpose_growth.propose_sub(
+                store.sb, state, os.environ.get('OPENAI_API_KEY'), _core)
+            _cor = purpose_growth.propose_core(
+                store.sb, os.environ.get('OPENAI_API_KEY'), _core)
+            out['purpose'] = {'sub': _sub, 'core': _cor}
+        except Exception as e:
+            out['purpose'] = {'error': str(e)[:150]}
+
         # 먼저 말 걸기 — 계기가 있을 때만 (없으면 아무 말도 안 한다)
         try:
             import outbox
