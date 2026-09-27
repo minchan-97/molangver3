@@ -151,6 +151,16 @@ def main(mode):
             # 사람도 늘 생각하지만 그걸 매번 문장으로 만들지는 않는다.
             import musing
             # 깨어난 김에 여러 번 생각한다 (러너 띄우는 값이 2분, 생각은 몇 ms)
+            try:        # 문득 옛일을 떠올리고, 그게 탐색 주제가 되게
+                from molang_store import SupabaseIdentity
+                from organism.curiosity import nudge_from_memory
+                _id = SupabaseIdentity(store.sb)
+                _rem = nudge_from_memory(state, list(_id.learned_facts))
+                if _rem:
+                    print(f"  문득 떠오름 → 관심: {', '.join(_rem)}")
+                out['reminisce'] = _rem
+            except Exception as e:
+                out['reminisce'] = {'error': str(e)[:100]}
             out['musing'] = musing.think_many(
                 state, rounds=int(os.environ.get('MUSING_ROUNDS', 30)),
                 log=print)
