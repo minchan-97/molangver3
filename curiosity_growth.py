@@ -148,9 +148,18 @@ def deepen(registry, log=print):
 
 
 NEW_TYPE_SYSTEM = """너는 한 존재의 사고 구조를 설계한다.
-아래 주제들을 다룰 때 필요한 '사고 방식'을 3~4단계로 설계하라.
-주제 이름이 아니라 사고 방식이어야 한다 (예: '비교하기'는 되고 '음식'은 안 됨).
-JSON 하나만: {"type_id":"영문_소문자_사고방식", "steps":[{"name":"단계 이름","directive":"이 단계에서 실제로 할 일"}]}"""
+
+규칙
+- 주제 이름이 아니라 **사고 방식**이어야 한다 ('비교하기'는 되고 '음식'은 안 됨).
+- 단계는 2~4개.
+- **반드시 마지막에 판단이 갈리는 지점을 둔다.** 갈래는 2~3개.
+  갈림길이 없으면 경험이 쌓여도 달라질 게 없어 사고가 아니라 절차다.
+  갈래는 서로 다른 결론이어야 한다 (예: 성립 / 불성립 / 유보).
+
+JSON 하나만:
+{"type_id":"영문_소문자_사고방식",
+ "steps":[{"name":"단계 이름","directive":"여기서 실제로 할 일"}],
+ "branches":[{"name":"갈래 이름","directive":"이 갈래에서 내리는 결론"}]}"""
 
 
 def propose_type(registry, topics, api_key=None, model=None, log=print):
@@ -180,6 +189,27 @@ def propose_type(registry, topics, api_key=None, model=None, log=print):
     return tid
 
 
+MERGE_MIN_USES = 6          # 이만큼은 쓰여야 합칠 후보
+MERGE_MIN_MEM = 3           # 근거도 이만큼 쌓였을 때
+
+
+def merge_candidates(registry, log=print):
+    """
+    합칠 만한 짝 고르기.
+    둘 다 자주 쓰였고 근거도 쌓였다면, 그 둘은 한 사고의 앞뒤일 수 있다.
+    """
+    ranked = [(tid, registry.usage_count.get(tid, 0),
+               len(getattr(t, "memory", []) or []))
+              for tid, t in registry.trees.items()]
+    ranked = [r for r in ranked if r[1] >= MERGE_MIN_USES and r[2] >= MERGE_MIN_MEM
+              and "__" not in r[0]]
+    ranked.sort(key=lambda r: -(r[1] + r[2]))
+    if len(ranked) < 2:
+        return None
+    a, b = ranked[0][0], ranked[1][0]
+    return registry.merge_deep(a, b, log=log)
+
+
 def run(sb, registry, state=None, api_key=None, embed_fn=None, classify_fn=None,
         log=print):
     """세 갈래를 한 번에. 워커가 호출한다."""
@@ -187,6 +217,11 @@ def run(sb, registry, state=None, api_key=None, embed_fn=None, classify_fn=None,
     out["memory"] = feed_tree_memory(sb, registry, embed_fn=embed_fn,
                                      classify_fn=classify_fn, log=log)
     out["deepened"] = deepen(registry, log=log)
+    # 늘 함께 쓰이는 두 사고를 하나로 — 넓어지기만 하지 않고 깊어지게
+    try:
+        out["merged"] = merge_candidates(registry, log=log)
+    except Exception as e:
+        out["merged"] = f"실패: {str(e)[:60]}"
     # 관심은 큰데 어느 트리로도 안 잡히는 주제들 → 새 유형 후보
     if state is not None:
         orphan = []
@@ -198,4 +233,3 @@ def run(sb, registry, state=None, api_key=None, embed_fn=None, classify_fn=None,
         if len(orphan) >= 3:
             out["new_type"] = propose_type(registry, orphan, api_key, log=log)
     return out
-
