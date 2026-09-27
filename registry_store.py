@@ -31,6 +31,9 @@ def _blob(registry: TreeRegistry) -> bytes:
                   for tid, t in registry.trees.items()},
         "type_examples": getattr(registry, "type_examples", {}),
         "usage_count": getattr(registry, "usage_count", {}),
+        # 생성 기록이 빠지면 '무엇이 자동으로 생긴 유형인지'를 잊는다.
+        # 그러면 시들기가 고를 대상이 없어 영원히 아무것도 안 줄어든다.
+        "creation_log": getattr(registry, "creation_log", []),
     })
 
 
@@ -95,5 +98,6 @@ def load_into(sb, registry: TreeRegistry) -> int:
         registry.type_examples = blob["type_examples"]
     if blob.get("usage_count"):
         registry.usage_count = blob["usage_count"]
+    if blob.get("creation_log"):
+        registry.creation_log = blob["creation_log"]
     return n
-
