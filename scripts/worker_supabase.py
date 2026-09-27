@@ -169,6 +169,39 @@ def main(mode):
             if state.cycle % every == 0:
                 cyc = curiosity_cycle(state, store, deep=False)
                 out['curiosity'] = cyc
+                # 피우피우 — 함께 사는 노란 병아리.
+                # 검색이 도는 회차에만 같이 움직인다: 매 회차면 비용이 세 배,
+                # 밤에 한 번이면 둘이 같이 산다는 느낌이 안 난다. 하루 여덟 번쯤.
+                try:
+                    import piupiu
+                    from molang_store import SupabaseIdentity
+                    from organism.curiosity import brave_search
+                    _rng = random.Random(time.time_ns())
+                    _ptopic = piupiu.pick_topic(state, _rng)
+                    _res = brave_search(_ptopic, os.environ.get('BRAVE_API_KEY'),
+                                        count=3)
+                    _seen = None
+                    if _res:
+                        r0 = _res[0]
+                        _seen = {'topic': _ptopic, 'title': r0.get('title'),
+                                 'text': r0.get('text') or r0.get('description'),
+                                 'url': r0.get('url')}
+                        # 1) 피우피우가 찾아온 것도 몰랑이 검토함으로
+                        ingest_result(state, _ptopic, r0,
+                                      {'novelty': state.novelty(_ptopic),
+                                       'prev_topic': state.last_topic}, _pitems := [])
+                        store.record_observations(_pitems)
+                    _piu = piupiu.identity(store.sb)
+                    _mol = SupabaseIdentity(store.sb)
+                    _talk = piupiu.converse(store.sb, _mol, _piu, _seen,
+                                            os.environ.get('OPENAI_API_KEY'))
+                    # 2) 관심이 서로 물든다
+                    _bleed = piupiu.bleed_interests(state, {_ptopic: 1.0})
+                    out['piupiu'] = {'topic': _ptopic, 'bleed': _bleed,
+                                     **({'talked': True} if _talk.get('talk') else _talk)}
+                except Exception as e:
+                    out['piupiu'] = {'error': str(e)[:150]}
+
             else:
                 out['curiosity'] = f'이번엔 생각만 (다음 검색까지 {every - (state.cycle % every)}회)'
             out['topology'] = maintenance(state)
@@ -194,37 +227,6 @@ def main(mode):
         except Exception as e:
             out['growth'] = {'error': str(e)[:200],
                              'where': _where(), 'type': type(e).__name__}
-
-        # 피우피우 — 함께 사는 노란 병아리. 제 주제를 찾아보고 몰랑이와 나눈다.
-        try:
-            import piupiu
-            from molang_store import SupabaseIdentity
-            from organism.curiosity import brave_search
-            _rng = random.Random(time.time_ns())
-            _ptopic = piupiu.pick_topic(state, _rng)
-            _res = brave_search(_ptopic, os.environ.get('BRAVE_API_KEY'),
-                                count=3)
-            _seen = None
-            if _res:
-                r0 = _res[0]
-                _seen = {'topic': _ptopic, 'title': r0.get('title'),
-                         'text': r0.get('text') or r0.get('description'),
-                         'url': r0.get('url')}
-                # 1) 피우피우가 찾아온 것도 몰랑이 검토함으로
-                ingest_result(state, _ptopic, r0,
-                              {'novelty': state.novelty(_ptopic),
-                               'prev_topic': state.last_topic}, _pitems := [])
-                store.record_observations(_pitems)
-            _piu = piupiu.identity(store.sb)
-            _mol = SupabaseIdentity(store.sb)
-            _talk = piupiu.converse(store.sb, _mol, _piu, _seen,
-                                    os.environ.get('OPENAI_API_KEY'))
-            # 2) 관심이 서로 물든다
-            _bleed = piupiu.bleed_interests(state, {_ptopic: 1.0})
-            out['piupiu'] = {'topic': _ptopic, 'bleed': _bleed,
-                             **({'talked': True} if _talk.get('talk') else _talk)}
-        except Exception as e:
-            out['piupiu'] = {'error': str(e)[:150]}
 
         # 목적이 아래에서부터 자란다 — 조건이 찼을 때만 제안, 승인은 사람이
         try:
