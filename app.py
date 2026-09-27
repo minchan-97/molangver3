@@ -24,6 +24,9 @@ st.set_page_config(page_title="몰랑이 💗", page_icon="🐰", layout="center
 from supabase import create_client
 import molang_auth
 from molang_store import SupabaseIdentity
+import outbox                      # 사이드바 여러 곳에서 쓴다 — 블록 안에서
+import review_box                  # 부르면 그 블록을 안 탄 실행에서 NameError 가 난다
+import purpose_growth
 
 @st.cache_resource
 def _sb():
@@ -125,7 +128,6 @@ def safe(widget, *args, key: str = None, **kwargs):
 if not st.session_state.get("_nudge_checked"):
     st.session_state["_nudge_checked"] = True
     try:
-        import outbox
         _waiting = outbox.pending(sb, 1)   # 한 번에 한 마디만
         if _waiting:
             for _w in _waiting:
@@ -230,7 +232,6 @@ with st.sidebar:
 
     # 검토 대기 — 검토함이 두 곳이다(대화에서 격리된 사실 + 워커가 찾아온 관측).
     # 앱이 한 쪽만 읽어서 워커가 격리해도 0으로 보이던 문제를 고쳤다.
-    import review_box
     _cnt = review_box.counts(sb, u.identity)
     _q = review_box.pending(sb, u.identity, 20)
     # 호기심이 사고 구조를 얼마나 바꿨나
@@ -252,7 +253,6 @@ with st.sidebar:
 
     # 목적 제안 — 몰랑이가 "이걸 목적으로 삼아도 될까?" 하고 물어온 것
     try:
-        import purpose_growth
         _props = (sb.table("molang_outbox")
                   .select("id,body,rule,payload,created_at")
                   .in_("rule", ["purpose_sub", "purpose_core"])
