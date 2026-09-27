@@ -84,7 +84,7 @@ def pick_topic(state, rng=None) -> str:
 
 
 def converse(sb, mol_ident, piu_ident, seen: dict, api_key=None,
-             log=print) -> dict:
+             log=print, place: str = "", same_room: bool = False) -> dict:
     """
     오늘 본 것을 두고 둘이 한 번 주고받는다.
     seen: {"topic":…, "title":…, "text":…, "url":…}
@@ -105,7 +105,10 @@ def converse(sb, mol_ident, piu_ident, seen: dict, api_key=None,
                           {"role": "user", "content":
                            f"오늘 본 것 [{seen.get('topic')}] "
                            f"{(seen.get('title') or '')[:80]}\n"
-                           f"{(seen.get('text') or '')[:300]}"}])
+                           f"{(seen.get('text') or '')[:300]}\n"
+                           + (f"둘은 지금 {place}에 함께 있다. 말이 길게 오간다."
+                              if same_room else
+                              "둘은 다른 방에 있다. 짧게 주고받는다.")}])
             talk = json.loads(r.choices[0].message.content)
         except Exception as e:
             log(f"  피우피우 대화 실패: {e}")
@@ -137,7 +140,8 @@ def converse(sb, mol_ident, piu_ident, seen: dict, api_key=None,
     try:
         sb.table("molang_peer_talks").insert({
             "topic": seen.get("topic"), "molang": talk["molang"][:400],
-            "piupiu": talk["piupiu"][:400], "source": seen.get("url")}).execute()
+            "piupiu": talk["piupiu"][:400], "source": seen.get("url"),
+            "place": place or None}).execute()
     except Exception as e:
         log(f"  대화 저장 실패: {str(e)[:80]}")
 
@@ -175,4 +179,3 @@ def mark_told(sb, ids):
             .in_("id", list(ids)).execute()
     except Exception:
         pass
-
