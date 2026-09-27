@@ -13,6 +13,7 @@ class OrganismState:
     observations: list = field(default_factory=list)
     musings: list = field(default_factory=list)   # 조용한 생각의 흔적 (말이 되기 전)
     reminisced: list = field(default_factory=list)  # 최근 떠올린 기억 (연달아 같은 것 방지)
+    dreams: list = field(default_factory=list)      # 밤에 꾼 꿈 (사실이 아니다)
     candidates: list = field(default_factory=list)
     quarantine: list = field(default_factory=list)
     rejected: list = field(default_factory=list)
@@ -28,6 +29,7 @@ class OrganismState:
         self.observations = self.observations[-1200:]
         self.musings = (self.musings or [])[-200:]
         self.reminisced = (self.reminisced or [])[-50:]
+        self.dreams = (self.dreams or [])[-60:]
         self.candidates = self.candidates[-600:]
         self.quarantine = self.quarantine[-400:]
         self.rejected = self.rejected[-300:]
