@@ -198,3 +198,4 @@ def run(sb, registry, state=None, api_key=None, embed_fn=None, classify_fn=None,
         if len(orphan) >= 3:
             out["new_type"] = propose_type(registry, orphan, api_key, log=log)
     return out
+
