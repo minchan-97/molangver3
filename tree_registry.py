@@ -350,3 +350,4 @@ def load_logic_db_types(registry, db_path: str = "logic_db.json"):
         registry.register_type(type_id, tree, examples=[entry["description"]])
         loaded += 1
     return loaded
+
