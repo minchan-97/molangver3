@@ -222,7 +222,7 @@ class SupabaseIdentity:
 
     # ---------- 흡수 ----------
 
-    def absorb(self, question: str, answer: str, learned: str = '',
+    def absorb(self, question: str, answer: str, learned: str = '', place: str = '',
                consolidate_fn=None, source: str = 'user',
                emotion: str = None, device: str = None):
         """
@@ -233,7 +233,7 @@ class SupabaseIdentity:
         여기서는 is_assistant_echo()로 한 번 더 막는다.
         """
         self.sb.table('molang_episodes').insert({
-            'owner': self.owner,
+            'owner': self.owner, 'place': place or getattr(self, 'place', None),
             'question': question[:2000],
             'answer': (answer or '')[:4000],
             'emotion': emotion,
