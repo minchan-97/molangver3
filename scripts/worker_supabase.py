@@ -171,6 +171,10 @@ def main(mode):
             import registry_store
             _reg = TreeRegistry()
             registry_store.load_into(store.sb, _reg)
+            _gone = _reg.wither()
+            if _gone:
+                print(f"  안 쓰인 사고유형 정리: {', '.join(_gone)}")
+            out['withered'] = _gone
             out['growth'] = curiosity_growth.run(
                 store.sb, _reg, state=state,
                 api_key=os.environ.get('OPENAI_API_KEY'), log=print)
