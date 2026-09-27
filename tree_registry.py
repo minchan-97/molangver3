@@ -280,6 +280,23 @@ class TreeRegistry:
         if len(branches) < 2:
             return None
 
+        # 정합성 검사는 **로컬**이 한다 (LLM 에게 맡기면 기준이 매번 달라지고
+        # 어디에도 남지 않는다). 규칙 + 작은 신경망.
+        verdict = {"ok": True}
+        try:
+            import logic_check
+            verdict = logic_check.judge(design, self,
+                                        getattr(self, "logic_scorer", None))
+        except Exception:
+            verdict = {"ok": True}
+        if not verdict.get("ok"):
+            self.creation_log.append({
+                "type_id": type_id, "skipped": True,
+                "reason": f"정합성 미달: {verdict.get('why')}",
+                "stage": verdict.get("stage"),
+                "timestamp": datetime.now().isoformat(timespec="seconds")})
+            return None
+
         # 설계를 실제 트리로: 단계는 이어지고, 마지막에서 갈래로 퍼진다
         tree = ThoughtStructure(learning_rate=0.12, continuity=0.7)
         prev_id = None
@@ -310,6 +327,8 @@ class TreeRegistry:
             "trigger_question": question[:60],
             "steps": [s.get("name", "") for s in steps],
             "branches": [b.get("name", "") for b in branches[:3]],
+            "features": verdict.get("features"),
+            "score": verdict.get("score"),
             "timestamp": datetime.now().isoformat(timespec="seconds"),
         })
         return type_id
