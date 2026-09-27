@@ -41,6 +41,11 @@ TALK_WORDS = {
     '진짜', '정말', '완전', '너무', '조금', '아직', '이제', '다시', '계속',
     '오늘', '어제', '내일', '지금', '아까', '나중', '요즘', '평소', '가끔',
     '궁금해', '좋아해', '싫어해', '재밌어', '신기해', '너의', '나의', '우리의',
+    '많이', '조금', '자주', '아주', '약간', '그냥', '역시', '이제', '항상',
+    '싶어', '싶다', '했어', '봤어', '들었어', '있었어', '같은', '이런', '저런',
+    '이야기', '얘기', '생각', '느낌', '기분', '정도', '때문', '경우', '부분',
+    '혹시', '여러', '같이', '함께', '서로', '모두', '다른', '어떻', '무엇',
+    '오늘', '내일', '어제', '이번', '다음', '처음', '마지막', '다시', '진짜',
     'strong', 'quot', 'href', 'http', 'https', 'www', 'span', 'div', 'amp',
     'nbsp', 'br', 'em', 'li', 'ul',
 }
@@ -50,6 +55,19 @@ STOP_EXACT = {'그리고', '하지만', '또한', '이는', '그것', '우리', 
               '이전', '현재', '내용', '정보', '경우', '문제', '결과', '방법'}
 
 HAS_DIGIT = re.compile(r'\d')
+
+
+# 이름은 주제로 남긴다 — 자기가 누구인지 알아보는 건 막을 이유가 없다.
+# 다만 부르는 말('몰랑아')과 줄인 말('몰랑')은 이름 하나로 합친다.
+# 안 그러면 같은 관심이 셋으로 갈려 셋 다 약해지고, 목록만 지저분해진다.
+NAME_CANON = {
+    "몰랑": "몰랑이", "몰랑아": "몰랑이", "몰랑이": "몰랑이", "몰랑이는": "몰랑이",
+    "피우": "피우피우", "피우야": "피우피우", "피우피우": "피우피우",
+}
+
+
+def canon_name(t: str) -> str:
+    return NAME_CANON.get(t, t)
 
 
 def _looks_proper(t: str) -> bool:
@@ -97,6 +115,10 @@ def _is_topic_like(t: str) -> bool:
         return False
     if t in TALK_WORDS:
         return False
+    if t in NAME_CANON:
+        return True                       # 이름은 통과
+    if len(t) <= 3 and t[-1] in '어아지네게까죠':
+        return False                      # '싶어', '봤어' 같은 말끝
     if _looks_proper(t):
         return True          # 가수·작품 이름 같은 고유명사는 살린다
     if t in STOP_EXACT:
@@ -204,7 +226,7 @@ def nudge_interests(state, texts, weight=None, min_mentions=None):
     freq = {}
     for text in texts:
         for t in tokens(text or ''):
-            t = strip_josa(t)          # '우주에' 와 '우주' 를 한 관심으로
+            t = canon_name(strip_josa(t))   # '우주에'→'우주', '몰랑아'→'몰랑이' 
             if _is_topic_like(t):
                 freq[t] = freq.get(t, 0) + 1
 
