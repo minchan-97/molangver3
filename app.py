@@ -318,11 +318,16 @@ with st.sidebar:
 
     # 목적 제안 — 몰랑이가 "이걸 목적으로 삼아도 될까?" 하고 물어온 것
     try:
+        # sent_at 은 '말을 걸었나'이지 '결정했나'가 아니다.
+        # 결정 여부는 error(거절) / molang_purposes(승인) 로 판단한다.
         _props = (sb.table("molang_outbox")
                   .select("id,body,rule,payload,created_at")
                   .in_("rule", ["purpose_sub", "purpose_core"])
-                  .is_("sent_at", "null").is_("error", "null")
-                  .order("id", desc=True).limit(3).execute().data) or []
+                  .is_("error", "null")
+                  .order("id", desc=True).limit(6).execute().data) or []
+        _done = {p.get("purpose") for p in purpose_growth.load_subs(sb, False)}
+        _props = [p for p in _props
+                  if (p.get("payload") or {}).get("purpose") not in _done][:3]
     except Exception:
         _props = []
     if _props:
@@ -341,7 +346,7 @@ with st.sidebar:
             if safe(pc1.button, "○ 그러자", key=f"pok_{_p['id']}"):
                 _r = purpose_growth.accept(sb, u.identity, _p)
                 if _r.get("ok"):
-                    outbox.mark_sent(sb, [_p["id"]])
+                    outbox.mark_sent(sb, [_p["id"]])   # 다시 안 뜨게
                     st.success("목적에 담았어요" + (f" — {_r.get('new','')}"
                                                   if _r.get("new") else ""))
                     st.rerun()
