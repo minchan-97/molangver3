@@ -274,13 +274,21 @@ def make(sb, identity=None, registry=None, api_key=None, log=print):
     return {"body": body, "rule": sig["rule"]}
 
 
+# 목적 제안은 같은 표를 쓰지만 '먼저 말 걸기'가 아니다.
+# 승인/거절이 필요한 것이라 사이드바에서 따로 다룬다.
+# (아웃박스가 먼저 꺼내 가면 sent_at 이 채워져 사이드바에서 사라졌다)
+PURPOSE_RULES = ("purpose_sub", "purpose_core")
+
+
 def pending(sb, limit: int = 3) -> list[dict]:
-    """앱이 열릴 때 아직 안 전한 말들."""
+    """앱이 열릴 때 아직 안 전한 말들. 목적 제안은 빼고."""
     try:
-        return (sb.table("molang_outbox")
+        rows = (sb.table("molang_outbox")
                 .select("id,body,rule,created_at")
                 .is_("sent_at", "null")
-                .order("id", desc=False).limit(limit).execute().data) or []
+                .order("id", desc=False).limit(limit + 4).execute().data) or []
+        return [r for r in rows
+                if r.get("rule") not in PURPOSE_RULES][:limit]
     except Exception:
         return []
 
