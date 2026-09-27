@@ -38,7 +38,8 @@ DRIFT_RATIO = 0.5         # 그중 이 비율 이상이 핵심과 결이 다르�
 
 
 # ── 저장 (molang_purposes) ───────────────────────────────────
-def load_subs(sb, only_active=True) -> list[dict]:
+def load_subs(sb, only_active: bool = True) -> list[dict]:
+    """승인된 목적들. only_active=False 면 핵심 이력까지 함께."""
     try:
         q = sb.table("molang_purposes").select("*").order("id", desc=True)
         rows = q.limit(50).execute().data or []
