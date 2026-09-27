@@ -57,9 +57,12 @@ class RejectedWrite(Exception):
 
 
 class SupabaseIdentity:
-    def __init__(self, sb, max_facts_in_prompt: int = 90,
+    def __init__(self, sb, owner: str = 'molang', max_facts_in_prompt: int = 90,
                  recent_episodes: int = 10):
         self.sb = sb
+        # 한 저장소에 여러 존재가 산다. owner 로 기억을 나눈다.
+        # (몰랑이와 피우피우가 같은 표를 쓰되 서로의 기억을 침범하지 않게)
+        self.owner = owner
         self.max_facts = max_facts_in_prompt
         self._recall = None            # 사실 지도 (기억이 많아지면 만든다)
         self._recall_n = 0
@@ -83,8 +86,8 @@ class SupabaseIdentity:
         # 없으면 기본 행을 만들어 둔다.
         idn = None
         try:
-            res = self.sb.table('molang_identity').select('*').eq('id', 1) \
-                      .limit(1).execute()
+            res = self.sb.table('molang_identity').select('*') \
+                      .eq('owner', self.owner).limit(1).execute()
             rows = getattr(res, 'data', None) or []
             idn = rows[0] if rows else None
         except Exception:
@@ -92,8 +95,8 @@ class SupabaseIdentity:
         if idn is None:
             try:
                 self.sb.table('molang_identity').insert(
-                    {'id': 1, 'persona': '', 'values': [], 'rules': [],
-                     'version': 1}).execute()
+                    {'owner': self.owner, 'persona': '', 'values': [],
+                     'rules': [], 'version': 1}).execute()
             except Exception:
                 pass
         if idn:
@@ -106,7 +109,9 @@ class SupabaseIdentity:
         self._recall = None            # 사실이 바뀌면 지도를 다시 만든다
         try:
             self._facts = self.sb.table('molang_facts_active') \
-                .select('id,text,norm_key,kind,strength,trust,seen,source,expires_at') \
+                .select('id,text,norm_key,kind,strength,trust,seen,source,'
+                        'expires_at,owner') \
+                .eq('owner', self.owner) \
                 .order('strength', desc=True).limit(400).execute().data or []
         except Exception as e:      # 뷰가 아직 없으면 알려주고 빈 상태로 시작
             self._facts = []
@@ -114,7 +119,8 @@ class SupabaseIdentity:
 
         try:
             eps = self.sb.table('molang_episodes') \
-                .select('question,answer').order('id', desc=True) \
+                .select('question,answer').eq('owner', self.owner) \
+                .order('id', desc=True) \
                 .limit(self.recent_episodes).execute().data or []
         except Exception:
             eps = []
@@ -227,6 +233,7 @@ class SupabaseIdentity:
         여기서는 is_assistant_echo()로 한 번 더 막는다.
         """
         self.sb.table('molang_episodes').insert({
+            'owner': self.owner,
             'question': question[:2000],
             'answer': (answer or '')[:4000],
             'emotion': emotion,
@@ -314,6 +321,7 @@ class SupabaseIdentity:
             'approved_by_human': False,
         }
         try:
+            row = {**row, 'owner': self.owner}
             res = self.sb.table('molang_facts').insert(row).execute()
             if res.data:
                 self._facts.append(res.data[0])
@@ -362,6 +370,7 @@ class SupabaseIdentity:
             pass
         self.sb.table('molang_quarantine').insert({
             'text': body, 'reason': reason, 'evidence': evidence or {},
+            'owner': self.owner,
         }).execute()
 
     # ---------- 사람 승인 (cogito anchor) ----------
@@ -382,7 +391,7 @@ class SupabaseIdentity:
 
     def pending_quarantine(self, limit: int = 50):
         return self.sb.table('molang_quarantine').select('*') \
-            .is_('resolved', 'null').order('id', desc=True) \
+            .eq('owner', self.owner).is_('resolved', 'null').order('id', desc=True) \
             .limit(limit).execute().data or []
 
     # ---------- 감사 로그 ----------
@@ -407,7 +416,7 @@ class SupabaseIdentity:
             'rules': self.judgment_rules,
             'version': self._identity_version + 1,
             'updated_at': _now_iso(),
-        }).eq('id', 1).eq('version', self._identity_version).execute()
+        }).eq('owner', self.owner).eq('version', self._identity_version).execute()
         if not res.data:
             raise RuntimeError(
                 '다른 기기에서 정체성이 먼저 수정됐습니다. reload() 후 재시도.')
