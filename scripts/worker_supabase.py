@@ -241,6 +241,31 @@ def main(mode):
             out['growth'] = {'error': str(e)[:200],
                              'where': _where(), 'type': type(e).__name__}
 
+        # 기분 — 네 축. 판단을 대신하지 않고 가중치로만 작용한다.
+        try:
+            import mood as _mood
+            from molang_store import SupabaseIdentity as _SI
+            _ev = {
+                "new": len((out.get('curiosity') or {}).get('ingested', 0) and [1] * 0) or
+                       ((out.get('curiosity') or {}).get('ingested', 0)
+                        if isinstance(out.get('curiosity'), dict) else 0),
+                "settled": (out.get('growth') or {}).get('memory', {}).get('fed', 0),
+                "repeat": len((out.get('reminisce') or []) or []),
+            }
+            _texts = []
+            try:
+                _texts = [f"{o.get('topic','')} {o.get('title','')}"
+                          for o in (state.observations or [])[-5:]]
+            except Exception:
+                pass
+            state.last_qe = float((out.get('topology') or
+                                   out.get('topology_night') or {}).get('mean_qe', 0) or 0)
+            out['mood'] = _mood.feel(store.sb, _SI(store.sb), state,
+                                     events=_ev, texts=_texts)
+            out['mood_bias'] = _mood.bias(out['mood'])
+        except Exception as e:
+            out['mood'] = {'error': str(e)[:120]}
+
         # 목적이 아래에서부터 자란다 — 조건이 찼을 때만 제안, 승인은 사람이
         try:
             import purpose_growth, purpose as _p
@@ -264,7 +289,8 @@ def main(mode):
             from molang_store import SupabaseIdentity
             _ident = SupabaseIdentity(store.sb)
             _msg = outbox.make(store.sb, identity=_ident, registry=_reg,
-                               api_key=os.environ.get('OPENAI_API_KEY'))
+                               api_key=os.environ.get('OPENAI_API_KEY'),
+                               state=state)
             out['nudge'] = _msg or '계기 없음'
         except Exception as e:
             out['nudge'] = {'error': str(e)[:200],
