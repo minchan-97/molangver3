@@ -38,15 +38,32 @@ SAME_PATH_RUNS = 5         # 최근 경로가 이만큼 연속 같으면 나눌 
 MAX_DEPTH_ADD = 3          # 한 트리에 이 이상은 안 깊어진다
 
 
+def _embed(text):
+    from organism.embedder import hashed_embedding
+    return hashed_embedding(text or "", dim=64)
+
+
 def _topic_tree(registry, topic: str, embed_fn=None, classify_fn=None):
-    """주제에 가장 가까운 트리. 없으면 None."""
+    """
+    주제에 가장 가까운 트리.
+
+    워커는 LLM 판별자를 넘기지 않는다. 그러면 낱말 겹침으로 떨어지는데,
+    주제가 '바다' 한 낱말이라 유형 예시와 겹칠 일이 없어 **매번 못 찾았다**
+    (근거가 91건 쌓였는데 fed: 0 이던 원인).
+    그래서 임베딩을 기본으로 쓰고, 그래도 못 찾으면 **가장 덜 배운 트리**에
+    붙인다. 어디든 쌓여야 깊어질 기회가 생긴다.
+    """
     try:
-        tid = registry.classify_type(topic, embed_fn=embed_fn,
+        tid = registry.classify_type(topic, embed_fn=embed_fn or _embed,
                                      classify_fn=classify_fn)
     except Exception:
         tid = None
-    if not tid or tid not in registry.trees:
+    if tid and tid in registry.trees:
+        return tid, registry.trees[tid]
+    if not registry.trees:
         return None, None
+    tid = min(registry.trees,
+              key=lambda k: len(getattr(registry.trees[k], "memory", [])))
     return tid, registry.trees[tid]
 
 
