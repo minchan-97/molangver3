@@ -225,6 +225,15 @@ def main(mode):
                             'where': _where(), 'type': type(e).__name__}
 
         if mode in ('nightly', 'all'):
+            try:        # 낮에 못 다룬 것이 겹쳐 꿈이 된다 (사실이 되지는 않는다)
+                import dream as _dream
+                from molang_store import SupabaseIdentity
+                out['dream'] = _dream.dream(
+                    store.sb, SupabaseIdentity(store.sb), state,
+                    os.environ.get('OPENAI_API_KEY'))
+            except Exception as e:
+                out['dream'] = {'error': str(e)[:150]}
+
             cyc = curiosity_cycle(state, store, deep=True)
             out['deep_curiosity'] = cyc
             out['topology_night'] = maintenance(state)
