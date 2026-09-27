@@ -134,6 +134,75 @@ class TreeRegistry:
                 best, best_score = tid, j
         return best if best_score >= thr else None
 
+    def merge_deep(self, a: str, b: str, log=print):
+        """
+        두 사고 방식을 하나로 합쳐 깊게 만든다.
+
+        왜 합치나
+          같은 질문에 늘 두 방식이 번갈아 쓰인다면, 그 둘은 사실 한 사고의
+          앞뒤다. 따로 두면 각자 얕은 채로 남는다. 이어 붙이면
+          'A로 살피고 → 그 결과로 B를 판단'하는 한 층 깊은 구조가 된다.
+
+          A의 갈래 중 가장 많이 쓰인 길을 B의 시작으로 잇는다.
+          나머지 갈래는 그대로 둔다 — 전부 이어 버리면 A가 사라진다.
+
+        만들어진 유형은 새 이름을 갖고, 원본 둘은 남는다.
+        (합친 게 나쁘면 원래 것으로 돌아갈 수 있어야 한다)
+        """
+        if a not in self.trees or b not in self.trees:
+            return None
+        ta, tb = self.trees[a], self.trees[b]
+        new_id = f"{a}__{b}"
+        if new_id in self.trees:
+            return None
+        if len(self.trees) >= self.MAX_TYPES + 6:
+            return None
+
+        import copy
+        nt = ThoughtStructure(learning_rate=0.12, continuity=0.7)
+        for nid, node in ta.nodes.items():
+            nn = copy.deepcopy(node)
+            nn.id = f"A_{nid}"
+            nt.add_node(nn, is_root=(nid == ta.root_id))
+        for frm, tos in ta.transitions.items():
+            for to, p in (tos or {}).items():
+                nt.add_branch(f"A_{frm}", f"A_{to}", p)
+
+        # A 에서 가장 자주 간 갈래를 B 로 잇는다
+        leaf = None
+        best = -1.0
+        for frm, tos in (ta.transitions or {}).items():
+            for to, p in (tos or {}).items():
+                if not (ta.transitions.get(to) or {}) and p > best:
+                    leaf, best = to, p
+        if leaf is None:
+            return None
+
+        for nid, node in tb.nodes.items():
+            nn = copy.deepcopy(node)
+            nn.id = f"B_{nid}"
+            nt.add_node(nn)
+        for frm, tos in tb.transitions.items():
+            for to, p in (tos or {}).items():
+                nt.add_branch(f"B_{frm}", f"B_{to}", p)
+
+        nt.nodes[f"A_{leaf}"].is_terminal = False
+        nt.add_branch(f"A_{leaf}", f"B_{tb.root_id}", 1.0)
+
+        self.register_type(new_id, nt,
+                           examples=(self.type_examples.get(a, [])[:1]
+                                     + self.type_examples.get(b, [])[:1]))
+        from datetime import datetime as _dt
+        self.creation_log.append({
+            "type_id": new_id, "reason": f"{a} 와 {b} 가 늘 함께 쓰여 합침",
+            "merged_from": [a, b],
+            "timestamp": _dt.now().isoformat(timespec="seconds"),
+        })
+        log(f"  사고 합치기: {a} + {b} → {new_id} (노드 {len(nt.nodes)})")
+        return new_id
+
+    MAX_TYPES = 26
+
     def wither(self, min_uses: int = 1, keep_recent: int = 2, max_types: int = 26):
         """
         오래 안 쓰인 자동생성 유형은 시들어 사라진다.
@@ -202,24 +271,35 @@ class TreeRegistry:
         if type_id.lower() in topic_like:
             return None
 
-        steps = design["steps"]
+        steps = design.get("steps") or []
+        branches = design.get("branches") or []
         if not steps:
             return None
+        # 갈림길 없는 설계는 받지 않는다. 길이 하나뿐인 트리는
+        # 전이 확률이 늘 1.0 이라 경험이 쌓여도 달라지지 않는다.
+        if len(branches) < 2:
+            return None
 
-        # 설계를 실제 트리로 (순차 단계 → 노드 체인)
+        # 설계를 실제 트리로: 단계는 이어지고, 마지막에서 갈래로 퍼진다
         tree = ThoughtStructure(learning_rate=0.12, continuity=0.7)
         prev_id = None
         for i, step in enumerate(steps):
             nid = f"{type_id}_{i}"
-            is_last = (i == len(steps) - 1)
             node = JudgmentNode(
                 nid, step.get("name", f"단계{i+1}"),
-                directive=step.get("directive", ""),
-                is_terminal=is_last)
+                directive=step.get("directive", ""), is_terminal=False)
             tree.add_node(node, is_root=(i == 0))
             if prev_id is not None:
                 tree.add_branch(prev_id, nid, 1.0)
             prev_id = nid
+
+        for j, br in enumerate(branches[:3]):
+            bid = f"{type_id}_b{j}"
+            tree.add_node(JudgmentNode(
+                bid, br.get("name", f"갈래{j+1}"),
+                directive=br.get("directive", ""), is_terminal=True))
+            tree.add_branch(prev_id, bid, 1.0 / len(branches[:3]))
+        tree._normalize(prev_id)
 
         self.register_type(type_id, tree, examples=[question])
 
@@ -229,6 +309,7 @@ class TreeRegistry:
             "reason": reason,
             "trigger_question": question[:60],
             "steps": [s.get("name", "") for s in steps],
+            "branches": [b.get("name", "") for b in branches[:3]],
             "timestamp": datetime.now().isoformat(timespec="seconds"),
         })
         return type_id
@@ -335,27 +416,69 @@ def load_logic_db_types(registry, db_path: str = "logic_db.json"):
             continue
         is_fallacy = entry.get("type", "") in fallacy_types
 
+        # 논리 유형 → **갈림길이 있는** 사고 트리.
+        #
+        # 예전 로더는 무엇을 받든 '적용 판단 → 추론' 2단 일직선을 만들었다.
+        # 그러면 전이 확률이 전부 1.0 이라 **대화로 조정될 여지가 없다.**
+        # 삼단논법을 서른 번 써도 매번 같은 길이니 학습이 일어나지 않는다.
+        # 이름만 논리학이고 안은 비어 있던 셈이다.
+        #
+        # 그래서 모든 유형을 이 모양으로 만든다:
+        #   전제 살피기 → [판단이 갈리는 지점] → 성립 / 불성립 / 유보
+        # 갈림길이 있어야 경험이 확률로 쌓인다.
         tree = ThoughtStructure(learning_rate=0.12, continuity=0.7)
-        # 논리 유형 → 3단 사고 트리
+        n = lambda i: f"{type_id}_{i}"
+
         tree.add_node(JudgmentNode(
-            f"{type_id}_0", f"{entry['name']} 적용 판단",
-            directive=f"이 질문에 '{entry['name']}'({entry['description']}) "
-                      f"논리를 적용할지 판단한다."), is_root=True)
+            n(0), f"{entry['name']}에 필요한 것 살피기",
+            directive=(f"이 질문에서 '{entry['name']}'({entry['description']}) "
+                       f"를 쓰려면 무엇이 있어야 하는지 먼저 확인한다. "
+                       f"형식: {entry['expression']}")), is_root=True)
+
+        tree.add_node(JudgmentNode(
+            n(1), "갖춰졌는지 가르기",
+            directive=("필요한 것이 실제로 갖춰졌는지 판단한다. "
+                       "갖춰졌으면 적용, 어긋나면 배제, "
+                       "모르겠으면 유보로 간다. 억지로 맞추지 않는다.")))
+        tree.add_branch(n(0), n(1), 1.0)
+
         if is_fallacy:
-            # 오류 유형은 '감지·회피' 트리
             tree.add_node(JudgmentNode(
-                f"{type_id}_1", "오류 회피",
-                directive=f"'{entry['name']}'은 논리적 오류다({entry['expression']}). "
-                          f"이 오류에 빠지지 않았는지 점검하고 피한다.",
+                n(2), "오류에 빠졌음 — 물러서기",
+                directive=(f"'{entry['name']}'은 논리적 오류다"
+                           f"({entry['expression']}). 지금 그 모양이라면 "
+                           f"결론을 거두고 근거를 다시 찾는다."),
+                is_terminal=True))
+            tree.add_node(JudgmentNode(
+                n(3), "오류 아님 — 그대로 진행",
+                directive="이 오류에는 해당하지 않는다. 하던 판단을 잇는다.",
+                is_terminal=True))
+            tree.add_node(JudgmentNode(
+                n(4), "헷갈림 — 근거 먼저",
+                directive="오류인지 아닌지 지금은 가릴 수 없다. "
+                          "단정하지 말고 근거를 더 본다.",
                 is_terminal=True))
         else:
             tree.add_node(JudgmentNode(
-                f"{type_id}_1", f"{entry['name']} 추론",
-                directive=f"{entry['expression']} 형식으로 추론한다.",
+                n(2), "성립 — 결론 내기",
+                directive=f"{entry['expression']} 형식으로 추론해 결론을 낸다.",
                 is_terminal=True))
-        tree.add_branch(f"{type_id}_0", f"{type_id}_1", 1.0)
+            tree.add_node(JudgmentNode(
+                n(3), "불성립 — 다른 길",
+                directive=(f"'{entry['name']}'로는 풀리지 않는다. "
+                           f"무엇이 모자란지 말하고 다른 방식을 찾는다."),
+                is_terminal=True))
+            tree.add_node(JudgmentNode(
+                n(4), "유보 — 모른다고 말하기",
+                directive="전제가 확실하지 않다. 모른다고 말하고 "
+                          "무엇이 있어야 판단할 수 있는지 밝힌다.",
+                is_terminal=True))
+
+        # 세 갈래. 처음엔 고르게 두고, 쓰이면서 확률이 갈린다.
+        for k, p in ((2, 0.45), (3, 0.30), (4, 0.25)):
+            tree.add_branch(n(1), n(k), p)
+        tree._normalize(n(1))
 
         registry.register_type(type_id, tree, examples=[entry["description"]])
         loaded += 1
     return loaded
-
