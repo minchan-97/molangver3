@@ -79,20 +79,24 @@ def wish(state):
 def settle(state, decay=0.985, floor=0.02):
     """오래된 관심은 옅어지고, 부스러기는 버린다."""
     try:
-        from organism.curiosity import _is_topic_like, strip_josa
+        from organism.curiosity import _is_topic_like, strip_josa, canon_name
     except Exception:
+        canon_name = lambda t: t
         def _is_topic_like(t):
             return 2 <= len(t) <= 12
 
         def strip_josa(t):
             return t
 
-    # 조사만 다른 관심사는 하나로 합친다 ('우주에' + '우주' → '우주')
+    # 조사만 다른 것, 부르는 말이 다른 것은 하나로 합친다
+    # ('우주에'+'우주' → '우주', '몰랑아'+'몰랑' → '몰랑이')
     for t in list((state.interests or {}).keys()):
-        base = strip_josa(t)
+        base = canon_name(strip_josa(t))
         if base != t and _is_topic_like(base):
-            state.interests[base] = min(
-                5.0, state.interests.get(base, 0.0) + state.interests.pop(t))
+            # 합치되 더하지는 않는다. 같은 관심을 여러 표기로 불렀을 뿐인데
+            # 더해버리면 그 하나가 관심 지형을 독차지한다.
+            a, b = state.interests.get(base, 0.0), state.interests.pop(t)
+            state.interests[base] = min(5.0, max(a, b) + 0.15 * min(a, b))
 
     dropped, faded = [], 0
     for t in list((state.interests or {}).keys()):
@@ -203,4 +207,3 @@ def to_reflection_context(state, n=6) -> str:
         if c:
             lines.append("이어본 것: " + ", ".join("-".join(p) for p in c))
     return "\n".join(dict.fromkeys(lines))[:800]
-
