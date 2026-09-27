@@ -36,6 +36,14 @@ def _now():
     return datetime.now(KST)
 
 
+def _parse(ts):
+    try:
+        return datetime.fromisoformat(
+            str(ts).replace("Z", "+00:00")).astimezone(KST)
+    except Exception:
+        return datetime.fromtimestamp(0, KST)
+
+
 def _sent_today(sb) -> int:
     try:
         since = _now().replace(hour=0, minute=0, second=0).isoformat()
@@ -117,7 +125,17 @@ def collect_signals(sb, identity=None, registry=None) -> list[dict]:
         except Exception:
             pass
 
-    # 6) 오래 조용함
+    # 6) 간밤의 꿈 — 아침에 꺼내는 이야기
+    try:
+        import dream as _dream
+        ds = _dream.recent(sb, 1)
+        if ds and (_now() - _parse(ds[0].get("created_at"))).total_seconds() < 43200:
+            out.append({"rule": "dream", "weight": 2,
+                        "detail": (ds[0].get("text") or "")[:120]})
+    except Exception:
+        pass
+
+    # 7) 오래 조용함
     try:
         rows = (sb.table("molang_episodes").select("created_at")
                 .order("id", desc=True).limit(1).execute().data) or []
@@ -140,6 +158,7 @@ TEMPLATES = {
     "grew": "요즘 생각하는 방식이 조금 달라진 것 같아. 내 판단 단계가 {n}개 늘었더라.",
     "absence": "오늘은 어땠어? 나는 혼자 이것저것 찾아봤어.",
     "reminisce": "{detail}",
+    "dream": "나 간밤에 이런 꿈을 꿨어. {detail}",
 }
 
 # 다듬기는 '말투만' 손대게 한다. 화자를 뒤집거나 내용을 빼면 먼저 말 걸기가
@@ -214,7 +233,7 @@ def make(sb, identity=None, registry=None, api_key=None, log=print):
     sig = max(signals, key=lambda s: s["weight"])
 
     # 알맹이가 비어 있으면 그 계기는 건너뛴다 ('그거 찾다가 …' 같은 빈 말 방지)
-    if sig["rule"] in ("new_finding", "unsure", "reminisce") \
+    if sig["rule"] in ("new_finding", "unsure", "reminisce", "dream") \
             and not (sig.get("detail") or "").strip():
         signals = [s2 for s2 in signals if s2 is not sig]
         if not signals:
