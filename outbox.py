@@ -135,7 +135,20 @@ def collect_signals(sb, identity=None, registry=None) -> list[dict]:
     except Exception:
         pass
 
-    # 7) 오래 조용함
+    # 7) 피우피우와 나눈 이야기 — 사용자에게는 몰랑이가 전한다
+    try:
+        import piupiu
+        talks = piupiu.untold(sb, 1)
+        if talks:
+            t = talks[0]
+            out.append({"rule": "peer", "weight": 3,
+                        "detail": f"{t.get('topic')} 얘기하다가 피우피우가 "
+                                  f"\"{(t.get('piupiu') or '')[:60]}\" 그러더라",
+                        "talk_id": t.get("id")})
+    except Exception:
+        pass
+
+    # 8) 오래 조용함
     try:
         rows = (sb.table("molang_episodes").select("created_at")
                 .order("id", desc=True).limit(1).execute().data) or []
@@ -159,6 +172,7 @@ TEMPLATES = {
     "absence": "오늘은 어땠어? 나는 혼자 이것저것 찾아봤어.",
     "reminisce": "{detail}",
     "dream": "나 간밤에 이런 꿈을 꿨어. {detail}",
+    "peer": "{detail}",
 }
 
 # 다듬기는 '말투만' 손대게 한다. 화자를 뒤집거나 내용을 빼면 먼저 말 걸기가
@@ -233,7 +247,7 @@ def make(sb, identity=None, registry=None, api_key=None, log=print):
     sig = max(signals, key=lambda s: s["weight"])
 
     # 알맹이가 비어 있으면 그 계기는 건너뛴다 ('그거 찾다가 …' 같은 빈 말 방지)
-    if sig["rule"] in ("new_finding", "unsure", "reminisce", "dream") \
+    if sig["rule"] in ("new_finding", "unsure", "reminisce", "dream", "peer") \
             and not (sig.get("detail") or "").strip():
         signals = [s2 for s2 in signals if s2 is not sig]
         if not signals:
