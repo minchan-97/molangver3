@@ -85,14 +85,22 @@ def to_topic(fact: dict) -> str | None:
     ('사용자는 베네치아에서 곤돌라를 탔다' → '곤돌라')
     """
     try:
-        from organism.curiosity import _is_topic_like, strip_josa
+        from organism.curiosity import _is_topic_like, strip_josa, canon_name
     except Exception:
         return None
-    words = [strip_josa(w) for w in TOKEN.findall(fact.get("text") or "")]
-    cand = [w for w in words if _is_topic_like(w) and w not in ("사용자", "몰랑이")]
+    words = [canon_name(strip_josa(w)) for w in TOKEN.findall(fact.get("text") or "")]
+    # '들어보려고' 같은 말끝이 회상에서 새어 나가 관심이 됐다.
+    # 주제 검사를 똑같이 거치게 한다.
+    cand = [w for w in words
+            if _is_topic_like(w) and w not in ("사용자",) and len(w) >= 2]
     if not cand:
         return None
-    return max(cand, key=len)            # 가장 구체적인 낱말
+    # 가장 긴 것이 아니라, 가장 '이름다운' 것을 고른다 (긴 활용형 배제)
+    cand.sort(key=lambda w: (-len(w), w))
+    for w in cand:
+        if len(w) <= 6:
+            return w
+    return cand[-1]
 
 
 def line(fact: dict) -> str:
