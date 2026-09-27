@@ -250,6 +250,46 @@ with st.sidebar:
     if _bump:
         st.caption(f"🌱 요즘 관심: {', '.join(_bump[:5])}")
 
+    # 목적 제안 — 몰랑이가 "이걸 목적으로 삼아도 될까?" 하고 물어온 것
+    try:
+        import purpose_growth
+        _props = (sb.table("molang_outbox")
+                  .select("id,body,rule,payload,created_at")
+                  .in_("rule", ["purpose_sub", "purpose_core"])
+                  .is_("sent_at", "null").is_("error", "null")
+                  .order("id", desc=True).limit(3).execute().data) or []
+    except Exception:
+        _props = []
+    if _props:
+        st.markdown("---")
+        st.markdown("### 🎯 목적 제안")
+        for _p in _props:
+            _core = (_p["rule"] == "purpose_core")
+            st.caption(("🌱 하위 목적" if not _core else "🧭 핵심 목적 바꾸기")
+                       + f" · {_p['body']}")
+            _pl = _p.get("payload") or {}
+            if _pl.get("why"):
+                st.caption(f"　이유: {_pl['why']}")
+            if _core and _pl.get("subs"):
+                st.caption("　그동안 품은 목적: " + ", ".join(_pl["subs"][:4]))
+            pc1, pc2 = st.columns(2)
+            if safe(pc1.button, "○ 그러자", key=f"pok_{_p['id']}"):
+                _r = purpose_growth.accept(sb, u.identity, _p)
+                if _r.get("ok"):
+                    outbox.mark_sent(sb, [_p["id"]])
+                    st.success("목적에 담았어요" + (f" — {_r.get('new','')}"
+                                                  if _r.get("new") else ""))
+                    st.rerun()
+                else:
+                    st.error(_r.get("error"))
+            if safe(pc2.button, "× 아직", key=f"pno_{_p['id']}"):
+                purpose_growth.decline(sb, _p)
+                st.rerun()
+        _subs = purpose_growth.load_subs(sb)
+        if _subs:
+            st.caption("지금 품은 목적: " +
+                       " · ".join(s["purpose"] for s in _subs[:4]))
+
     st.markdown("---")
     st.markdown(f"### 🧪 검토 대기 {_cnt['total']}")
     st.caption(f"대화에서 {_cnt['fact']}건 · 워커가 찾은 것 {_cnt['observation']}건")
