@@ -34,6 +34,9 @@ def _blob(registry: TreeRegistry) -> bytes:
         # 생성 기록이 빠지면 '무엇이 자동으로 생긴 유형인지'를 잊는다.
         # 그러면 시들기가 고를 대상이 없어 영원히 아무것도 안 줄어든다.
         "creation_log": getattr(registry, "creation_log", []),
+        # 구조 판정기도 함께 — 배운 것이 남아야 다음 판정이 나아진다
+        "logic_scorer": (registry.logic_scorer.blob()
+                         if getattr(registry, "logic_scorer", None) else None),
     })
 
 
@@ -100,4 +103,10 @@ def load_into(sb, registry: TreeRegistry) -> int:
         registry.usage_count = blob["usage_count"]
     if blob.get("creation_log"):
         registry.creation_log = blob["creation_log"]
+    if blob.get("logic_scorer"):
+        try:
+            from logic_check import TinyScorer
+            registry.logic_scorer = TinyScorer.load(blob["logic_scorer"])
+        except Exception:
+            pass
     return n
