@@ -99,6 +99,61 @@ class TreeRegistry:
         self.usage_count[type_id] = self.usage_count.get(type_id, 0) + 1
         return self.trees[type_id]
 
+    @staticmethod
+    def _step_words(steps) -> set:
+        """
+        단계 글자를 3글자 조각으로. 낱말 단위로 비교하면
+        '감정 파악' 과 '감정 읽기' 를 다른 것으로 본다 — 실제로 그래서
+        같은 일을 하는 유형이 넷이나 생겼다. 조각으로 보면 '감정' 이 겹친다.
+        """
+        import re
+        text = " ".join(
+            f"{s.get('name','')} {s.get('directive','')}" for s in (steps or []))
+        text = re.sub(r'[^가-힣A-Za-z]', '', text)
+        for stop in ("사용자", "대화", "정보", "단계", "내용", "답변", "한다", "하고"):
+            text = text.replace(stop, "")
+        return {text[i:i + 3] for i in range(len(text) - 2)}
+
+    def _too_similar(self, design: dict, thr: float = 0.35):
+        """설계가 기존 트리와 얼마나 겹치나. 많이 겹치면 그 유형 이름을 돌려준다."""
+        new = self._step_words(design.get("steps"))
+        if len(new) < 6:
+            return None
+        best, best_score = None, 0.0
+        for tid, tree in self.trees.items():
+            old = self._step_words(
+                [{"name": n.prompt, "directive": n.directive}
+                 for n in tree.nodes.values()])
+            if not old:
+                continue
+            # 합집합이 아니라 '작은 쪽' 기준으로 본다.
+            # 단계 수가 다르면 자카드는 낮게 나오지만, 새 설계의 내용이
+            # 기존 것에 거의 다 들어 있으면 그건 같은 일을 하는 유형이다.
+            j = len(new & old) / max(1, min(len(new), len(old)))
+            if j > best_score:
+                best, best_score = tid, j
+        return best if best_score >= thr else None
+
+    def wither(self, min_uses: int = 1, keep_recent: int = 3):
+        """
+        오래 안 쓰인 자동생성 유형은 시들어 사라진다.
+        늘기만 하고 줄지 않으면 그건 성장이 아니라 비대다.
+        기본 20종과 최근에 만든 것은 건드리지 않는다.
+        """
+        auto = [c["type_id"] for c in self.creation_log if not c.get("skipped")]
+        protect = set(auto[-keep_recent:])
+        gone = []
+        for tid in auto[:-keep_recent] if len(auto) > keep_recent else []:
+            if tid in protect or tid not in self.trees:
+                continue
+            if self.usage_count.get(tid, 0) <= min_uses:
+                mem = len(getattr(self.trees[tid], "memory", []))
+                if mem == 0:              # 근거까지 쌓였으면 남긴다
+                    self.trees.pop(tid, None)
+                    self.usage_count.pop(tid, None)
+                    gone.append(tid)
+        return gone
+
     def create_from_design(self, design: dict, question: str,
                            reason: str = "새 유형 감지") -> Optional[str]:
         """
@@ -117,6 +172,20 @@ class TreeRegistry:
         auto_created = len(self.creation_log)
         if auto_created >= 12:
             return None   # 이미 충분히 다양 → 기존 유형으로 처리
+
+        # 과생성 방지 1-b: 기존 유형과 '하는 일'이 겹치면 만들지 않는다.
+        #
+        # 이름만 보고 걸러서는 부족했다. 하룻밤에 analyze / dialogue /
+        # discussion / emotion_analysis 가 각각 생겼는데 단계가 사실상 같았다.
+        # 유형이 흩어지면 같은 경로가 반복될 일이 없어져서, 넓어지느라
+        # 깊어지지 못한다(판단 단계가 한 번도 안 늘어난 원인).
+        _dup = self._too_similar(design)
+        if _dup:
+            self.creation_log.append({
+                "type_id": type_id, "at": datetime.now().isoformat(),
+                "skipped": True, "merged_into": _dup,
+                "reason": f"기존 '{_dup}' 와 하는 일이 겹쳐 만들지 않음"})
+            return _dup      # 기존 유형을 쓰게 한다
 
         # 과생성 방지 2: 화제성 이름 거부 (사고방식이 아닌 주제면 안 만듦)
         topic_like = {"preference", "time_management", "conversation", "hobby",
