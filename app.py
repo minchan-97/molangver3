@@ -251,6 +251,20 @@ with st.sidebar:
     if _bump:
         st.caption(f"🌱 요즘 관심: {', '.join(_bump[:5])}")
 
+    # 피우피우 — 사용자와 직접 말하지 않는다. 몰랑이가 전할 뿐.
+    try:
+        import piupiu
+        _pt = (sb.table("molang_peer_talks").select("*")
+               .order("id", desc=True).limit(3).execute().data) or []
+        if _pt:
+            with st.expander(f"🐤 피우피우와 나눈 이야기 {len(_pt)}"):
+                for _t in _pt:
+                    st.caption(f"**{_t.get('topic')}**")
+                    st.caption(f"　🐰 {(_t.get('molang') or '')[:70]}")
+                    st.caption(f"　🐤 {(_t.get('piupiu') or '')[:70]}")
+    except Exception:
+        pass
+
     # 목적 제안 — 몰랑이가 "이걸 목적으로 삼아도 될까?" 하고 물어온 것
     try:
         _props = (sb.table("molang_outbox")
