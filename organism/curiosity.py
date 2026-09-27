@@ -121,6 +121,13 @@ def _is_topic_like(t: str) -> bool:
         return True                       # 이름은 통과
     if len(t) <= 3 and t[-1] in '어아지네게까죠':
         return False                      # '싶어', '봤어' 같은 말끝
+    # 네 글자 이상인데 연결·종결 어미로 끝나면 동사 활용형이다.
+    # ('들어보려고', '알아가면서') — 두 글자 명사(사고·창고)는 걸리지 않는다.
+    if len(t) >= 4 and (t.endswith(('려고', '면서', '으며', '하며', '지만',
+                                    '거나', '든지', '어서', '아서', '려는',
+                                    '했던', '하던', '보려', '으려'))
+                        or t[-1] in '고며서면'):
+        return False
     if _looks_proper(t):
         return True          # 가수·작품 이름 같은 고유명사는 살린다
     if t in STOP_EXACT:
@@ -270,7 +277,9 @@ def expand_query_with_openai(topic, identity_prompt="", model=None):
             why = purpose.query_context()
         except Exception:
             why = ""
-        msg = ("You are choosing one curiosity search direction for a "
+        msg = ("Return ONLY the search query itself — no greeting, no name, "
+               "no quotes, no explanation. 8 words max. "
+               "You are choosing one curiosity search direction for a "
                "persistent digital organism. Return ONLY a short Korean "
                "web-search query. Seek something genuinely informative and "
                "not merely useful. " + why
@@ -282,6 +291,16 @@ def expand_query_with_openai(topic, identity_prompt="", model=None):
             messages=[{'role': 'user', 'content': msg}],
             temperature=.9, max_tokens=60)
         q = (r.choices[0].message.content or '').strip().strip('"')
-        return q[:160] or topic
+
+        # 말투가 섞이면 버린다.
+        # 실제로 "오, 찬기! 피우피우에 대한 흥미로운 검색어는 이거야: …" 가
+        # 그대로 Brave 에 들어갔다. 정체성 프롬프트를 문맥으로 주다 보니
+        # 검색어가 아니라 '몰랑이의 대답'이 나온 것이다.
+        if ':' in q:                       # "…는 이거야: 실제검색어"
+            q = q.split(':')[-1].strip().strip('"')
+        bad = ('찬기', '오,', '이거야', '검색어', '안녕', '히힛', '!')
+        if any(b in q for b in bad) or len(q) > 60 or not q:
+            return topic                   # 의심스러우면 주제를 그대로
+        return q[:160]
     except Exception:
         return topic
