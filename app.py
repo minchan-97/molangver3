@@ -561,9 +561,13 @@ if msg or photo:
             _piu_room = (_hh.get("where") or {}).get("piupiu")
             _here = [o.get("name") for o in
                      (_hh.get("objects") or {}).get(_room, [])][-4:]
+            _fit = _hm.fit("molang", _room) if _room else {}
             if _room:
                 place_ctx = (
                     f"[지금 있는 곳] 너는 {_room}에 있다."
+                    + (f" 너는 대왕토끼라 여기가 {_fit['feel']}."
+                       + (f" {_fit['note']}." if _fit.get("note") else "")
+                       if _fit else "")
                     + (f" 여기엔 {', '.join(map(str, _here))}가 있다." if _here else "")
                     + (f" 피우피우는 {_piu_room}에 있다."
                        if _piu_room and _piu_room != _room
