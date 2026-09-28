@@ -123,6 +123,10 @@ def _is_topic_like(t: str) -> bool:
         return False                      # '싶어', '봤어' 같은 말끝
     # 네 글자 이상인데 연결·종결 어미로 끝나면 동사 활용형이다.
     # ('들어보려고', '알아가면서') — 두 글자 명사(사고·창고)는 걸리지 않는다.
+    # '듣는다', '한다' 같은 서술형. '바다'가 걸리지 않게 끝 두 글자로 본다.
+    if len(t) >= 3 and t.endswith(('는다', '한다', '된다', '인다', '진다',
+                                   '났다', '왔다', '갔다', '봤다', '한테')):
+        return False
     if len(t) >= 4 and (t.endswith(('려고', '면서', '으며', '하며', '지만',
                                     '거나', '든지', '어서', '아서', '려는',
                                     '했던', '하던', '보려', '으려'))
@@ -211,6 +215,10 @@ def nudge_from_memory(state, facts, weight=0.15, n=2):
         if not topic:
             continue
         old = float(state.interests.get(topic, 0.0))
+        # 이미 큰 관심은 회상으로 더 키우지 않는다.
+        # 같은 기억이 반복 호출돼도 한쪽만 부풀지 않게.
+        if old >= 2.0:
+            continue
         state.interests[topic] = max(0.0, min(5.0, old + weight))
         bumped.append(topic)
     if got:
