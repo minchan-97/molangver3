@@ -36,6 +36,37 @@ DWELL_WEIGHT = 0.05      # 머문 방의 결이 관심에 스미는 정도
 MOVE_TEMP = 0.8          # 낮으면 늘 같은 방, 높으면 아무 데나
 BUILD_CHANCE = 0.25      # 회차마다 뭔가 만들거나 옮길 확률
 
+# 몸 — 크기는 '갈 수 있느냐'가 아니라 '어떻게 느끼느냐'다.
+# 자기 집에 못 들어가는 방은 없다. 다만 큰 몸은 좁은 데서 조심스럽고,
+# 작은 몸은 넓은 데서 두리번거린다. 그 차이가 관심을 다르게 만든다.
+BODY = {
+    "molang": {"size": 1.0, "name": "대왕토끼"},   # 크다
+    "piupiu": {"size": 0.25, "name": "병아리"},    # 아주 작다
+}
+
+# 방의 품 — 넓은 방일수록 크다
+ROOM_SPACE = {"부엌": 0.7, "서재": 0.6, "창가": 0.5,
+              "작업방": 0.6, "마당": 1.0, "다락": 0.35}
+
+
+def fit(who: str, room: str) -> dict:
+    """
+    몸과 방이 어떻게 만나나. 막지 않고 느낌만 다르게 한다.
+      좁다  큰 몸이 작은 방에 — 조심스럽고, 오래 안 머문다. 대신 구석이 잘 보인다
+      넓다  작은 몸이 큰 방에 — 두리번거리고, 새로 눈에 띄는 게 많다
+    """
+    size = BODY.get(who, {}).get("size", 0.5)
+    space = ROOM_SPACE.get(room, 0.6)
+    ratio = size / max(0.05, space)
+    if ratio > 1.6:
+        return {"feel": "좁다", "stay": 0.7, "notice": 1.4,
+                "note": "몸이 꽉 차서 구석까지 눈에 들어온다"}
+    if ratio < 0.5:
+        return {"feel": "넓다", "stay": 1.2, "notice": 1.3,
+                "note": "넓어서 두리번거리게 된다"}
+    return {"feel": "맞다", "stay": 1.0, "notice": 1.0, "note": ""}
+
+
 ROOMS = {
     "부엌": ["재료", "굽기", "발효", "맛", "냄비", "빵"],
     "서재": ["책", "기록", "역사", "언어", "지도", "수학"],
@@ -159,7 +190,9 @@ def move(home: dict, who: str, interests: dict, rng=None) -> str:
         objs = len((home.get("objects") or {}).get(name, []))
         # 먼 방은 덜 간다 — 거리가 있어야 '돌아다닌다'가 된다
         far = distance(here, name) if here else 0.0
-        scores[name] = (pull + 0.15 * math.log1p(objs)) * fresh - 0.12 * far
+        body = fit(who, name)        # 몸에 맞는 방에 조금 더 오래
+        scores[name] = ((pull + 0.15 * math.log1p(objs)) * fresh
+                        - 0.12 * far) * (0.85 + 0.15 * body["stay"])
 
     names = list(scores)
     z = [math.exp(scores[n] / max(1e-6, MOVE_TEMP)) for n in names]
@@ -270,6 +303,8 @@ def stir(state, home: dict, who: str, room: str, moved_from: str = None,
     visits = (home.get("visits") or {}).get(room, 0)
     first = 1.6 if visits <= 1 else 1.0
     far = 1.0 + 0.25 * (distance(moved_from, room) if moved_from else 0.0)
+    body = fit(who, room)            # 몸과 방이 안 맞으면 더 잘 보인다
+    far *= body["notice"]
 
     for w in ROOMS.get(room, [])[:2]:
         old = float((state.interests or {}).get(w, 0.0))
@@ -308,8 +343,10 @@ def tick(sb, state, piu_interests: dict = None, rng=None, log=print) -> dict:
                                rng)) if e]
 
     save(sb, home)
+    mol_fit, piu_fit = fit("molang", mol_room), fit("piupiu", piu_room)
     same = mol_room == piu_room
-    log(f"  집: 몰랑이 {mol_room} · 피우피우 {piu_room}"
+    log(f"  집: 몰랑이 {mol_room}({mol_fit['feel']}) · "
+        f"피우피우 {piu_room}({piu_fit['feel']})"
         + ("  (같은 방)" if same else "")
         + (f" · {built[0]['who']}가 {built[0]['item']}를 {built[0]['what']}"
            if built else ""))
@@ -317,6 +354,7 @@ def tick(sb, state, piu_interests: dict = None, rng=None, log=print) -> dict:
             "moved": {"molang": prev.get("molang") != mol_room,
                       "piupiu": prev.get("piupiu") != piu_room},
             "dist": round(distance(prev.get("molang") or mol_room, mol_room), 1),
+            "fit": {"molang": mol_fit["feel"], "piupiu": piu_fit["feel"]},
             "dwell_bumped": sorted(set(bumped))[:5], "built": built,
             "objects": {r: [o["name"] for o in v]
                         for r, v in (home.get("objects") or {}).items() if v}}
