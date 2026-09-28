@@ -251,46 +251,85 @@ with st.sidebar:
     if _bump:
         st.caption(f"🌱 요즘 관심: {', '.join(_bump[:5])}")
 
-    # 🏠 둘의 집 — 어디에 있고, 무엇을 놓아뒀고, 무엇이 바뀌었나
+    # 🏠 둘의 집과 바깥 — 어디에 있고, 무엇을 놓아뒀고, 무엇이 바뀌었나
     try:
         import home as _home
+        import land as _land
         _h = _home.load(sb)
+        _ld = _land.load(sb)
         _where = _h.get("where") or {}
         _objs = _h.get("objects") or {}
         _visits = _h.get("visits") or {}
         _mx = max(1, max(_visits.values()) if _visits else 1)
+        _coords = _home.layout()["coords"]
 
         st.markdown("---")
         st.markdown("### 🏠 둘의 집")
+
+        # 방을 **실제 좌표대로** 놓는다. 이름표 여섯 개가 아니라 지도가 되게.
+        _rows = sorted({c[0] for c in _coords.values()})
+        _cols = sorted({c[1] for c in _coords.values()})
+        _grid = {(r, c): None for r in _rows for c in _cols}
+        for _r, _xy in _coords.items():
+            _grid[(_xy[0], _xy[1])] = _r
+
         _cells = []
-        for _r in _home.ROOMS:
-            _who = "".join(("🐰" if k == "molang" else "🐤")
-                           for k, v in _where.items() if v == _r)
-            _items = [o.get("name") for o in (_objs.get(_r) or [])][-3:]
-            # 자주 간 방일수록 진하게 — 머문 시간이 보이게
-            _warm = 0.10 + 0.55 * (_visits.get(_r, 0) / _mx)
-            _cells.append(
-                f'<div style="background:rgba(254,240,27,{_warm:.2f});'
-                'border:1px solid #cfcfcf;border-radius:10px;padding:7px 8px;'
-                'min-height:74px;">'
-                f'<div style="font-size:0.78rem;font-weight:700;color:#333;">'
-                f'{_r} <span style="float:right">{_who}</span></div>'
-                f'<div style="font-size:0.68rem;color:#666;line-height:1.35;'
-                'margin-top:3px;">'
-                + ("<br>".join("· " + str(i)[:10] for i in _items)
-                   if _items else "<span style=\"color:#aaa\">비어 있음</span>")
-                + "</div></div>")
+        for _r in _rows:
+            for _c in _cols:
+                _room = _grid.get((_r, _c))
+                if not _room:
+                    _cells.append('<div style="min-height:70px"></div>')
+                    continue
+                _who = "".join(("🐰" if k == "molang" else "🐤")
+                               for k, v in _where.items() if v == _room)
+                _items = [o.get("name") for o in (_objs.get(_room) or [])][-3:]
+                _warm = 0.10 + 0.55 * (_visits.get(_room, 0) / _mx)
+                _sm = _home.stim(_room)
+                _cells.append(
+                    f'<div style="background:rgba(254,240,27,{_warm:.2f});'
+                    'border:1px solid #cfcfcf;border-radius:10px;padding:6px 7px;'
+                    'min-height:70px;">'
+                    f'<div style="font-size:0.75rem;font-weight:700;color:#333;">'
+                    f'{_room} <span style="float:right">{_who}</span></div>'
+                    f'<div style="font-size:0.62rem;color:#888;">'
+                    f'{"☀️" if _sm["lift"] > 0.65 else "🌙" if _sm["lift"] < 0.45 else "·"}'
+                    f'{" 🔇" if _sm["quiet"] else ""}</div>'
+                    f'<div style="font-size:0.66rem;color:#666;line-height:1.3;">'
+                    + ("<br>".join("· " + str(i)[:9] for i in _items)
+                       if _items else "")
+                    + "</div></div>")
         st.markdown(
-            '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">'
-            + "".join(_cells) + "</div>", unsafe_allow_html=True)
+            f'<div style="display:grid;grid-template-columns:repeat({len(_cols)},1fr);'
+            'gap:5px;">' + "".join(_cells) + "</div>", unsafe_allow_html=True)
 
         _same = len(set(_where.values())) == 1 and len(_where) > 1
-        st.caption(("🐰🐤 같은 방에 있어요" if _same else
-                    f"🐰 {_where.get('molang','?')} · 🐤 {_where.get('piupiu','?')}"))
+        st.caption("🐰🐤 같은 방에 있어요" if _same else
+                   f"🐰 {_where.get('molang','?')} · 🐤 {_where.get('piupiu','?')}")
+
+        # 바깥 — 집에서 얼마나 먼지, 가봤는지
+        _places = _ld.get("places") or []
+        if _places:
+            _lv = _ld.get("visits") or {}
+            _icon = {"바다": "🌊", "산": "⛰️", "숲": "🌲",
+                     "마을": "🏘️", "들판": "🌾", "물가": "💧"}
+            st.markdown("#### 🧭 바깥")
+            for _p in sorted(_places, key=lambda x: x["dist"]):
+                _n = _lv.get(_p["kind"], 0)
+                _bar = "─" * int(min(10, _p["dist"]))
+                st.caption(
+                    f"🏠{_bar}{_icon.get(_p['kind'],'📍')} **{_p['kind']}** "
+                    f"· {_p['dist']}만큼 멀리 · "
+                    + (f"{_n}번 다녀옴" if _n else "아직 못 가봄")
+                    + (f" · {', '.join(_p.get('from', [])[:2])}에서 생김"
+                       if _p.get("from") else ""))
 
         _log = (_h.get("log") or [])[-6:][::-1]
-        if _log:
-            with st.expander(f"🔨 집이 바뀐 자취 {len(_h.get('log') or [])}"):
+        _llog = (_ld.get("log") or [])[-4:][::-1]
+        if _log or _llog:
+            with st.expander(f"🔨 바뀐 자취 {len(_h.get('log') or []) + len(_ld.get('log') or [])}"):
+                for _e in _llog:
+                    st.caption(f"🧭 {_e.get('kind')} — {_e.get('what')}"
+                               + ("(처음)" if _e.get("first") else ""))
                 for _e in _log:
                     _wh = "🐰" if _e.get("who") == "molang" else "🐤"
                     if _e.get("what") == "옮김":
@@ -299,6 +338,10 @@ with st.sidebar:
                     else:
                         st.caption(f"{_wh} {_e.get('room')}에 "
                                    f"{_e.get('item')} 를 놓았어요")
+
+        # 커지면 한눈에 — 별도 탭처럼 펼쳐 보는 자리
+        st.session_state["_world"] = {"home": _h, "land": _ld,
+                                      "coords": _coords}
     except Exception as _e:
         st.caption(f"집을 못 불러왔어요: {str(_e)[:60]}")
 
@@ -520,6 +563,64 @@ hp = profile_for(last_emo)
 head = f'<img src="{dataurl(hp)}" class="head-pic">' if hp else '🐰'
 st.markdown(f'<div class="chat-head">{head}몰랑이 💗</div>', unsafe_allow_html=True)
 st.caption("🔧 버전 v13 (말투 완급)")  # 이게 보이면 새 코드가 도는 것
+
+# ── 세계 한눈에 보기 (집이 커지면 사이드바로는 좁다) ──
+_w = st.session_state.get("_world")
+if _w and (len(_w["land"].get("places") or []) >= 2
+           or sum(len(v) for v in (_w["home"].get("objects") or {}).values()) >= 6):
+    with st.expander("🗺️ 몰랑이의 세계 한눈에 보기"):
+        _h2, _l2, _co = _w["home"], _w["land"], _w["coords"]
+        _wh = _h2.get("where") or {}
+        _ob = _h2.get("objects") or {}
+        _vi = _h2.get("visits") or {}
+        _mx2 = max(1, max(_vi.values()) if _vi else 1)
+        _rows2 = sorted({c[0] for c in _co.values()})
+        _cols2 = sorted({c[1] for c in _co.values()})
+        _g2 = {(c[0], c[1]): r for r, c in _co.items()}
+        _cell = []
+        for _r in _rows2:
+            for _c in _cols2:
+                _rm = _g2.get((_r, _c))
+                if not _rm:
+                    _cell.append('<div></div>'); continue
+                _who2 = "".join(("🐰" if k == "molang" else "🐤")
+                                for k, v in _wh.items() if v == _rm)
+                _its = [o.get("name") for o in (_ob.get(_rm) or [])]
+                _warm2 = 0.08 + 0.5 * (_vi.get(_rm, 0) / _mx2)
+                import home as _hm2
+                _s2 = _hm2.stim(_rm)
+                _f2 = _hm2.fit("molang", _rm)
+                _cell.append(
+                    f'<div style="background:rgba(254,240,27,{_warm2:.2f});'
+                    'border:1px solid #d5d5d5;border-radius:12px;padding:10px;'
+                    'min-height:110px;">'
+                    f'<div style="font-weight:700;color:#333;">{_rm} '
+                    f'<span style="float:right;font-size:1.1rem">{_who2}</span></div>'
+                    f'<div style="font-size:0.72rem;color:#999;margin:3px 0;">'
+                    f'{"☀️ 환함" if _s2["lift"] > 0.65 else "🌙 어둑" if _s2["lift"] < 0.45 else "· 보통"}'
+                    f'{" · 🔇 조용" if _s2["quiet"] else ""} · 🐰{_f2["feel"]}</div>'
+                    f'<div style="font-size:0.75rem;color:#555;line-height:1.5;">'
+                    + ("<br>".join("· " + str(i) for i in _its) if _its
+                       else '<span style="color:#bbb">비어 있음</span>')
+                    + f'</div><div style="font-size:0.68rem;color:#aaa;'
+                    f'margin-top:4px;">{_vi.get(_rm, 0)}번 머묾</div></div>')
+        st.markdown(
+            f'<div style="display:grid;grid-template-columns:repeat({len(_cols2)},1fr);'
+            'gap:8px;">' + "".join(_cell) + "</div>", unsafe_allow_html=True)
+
+        _pl = _l2.get("places") or []
+        if _pl:
+            _lv2 = _l2.get("visits") or {}
+            _ic = {"바다": "🌊", "산": "⛰️", "숲": "🌲",
+                   "마을": "🏘️", "들판": "🌾", "물가": "💧"}
+            st.markdown("**바깥** — 집에서 멀어지는 순서")
+            for _p in sorted(_pl, key=lambda x: x["dist"]):
+                _n2 = _lv2.get(_p["kind"], 0)
+                st.markdown(
+                    f"🏠 {'━' * int(min(14, _p['dist']))} "
+                    f"{_ic.get(_p['kind'], '📍')} **{_p['kind']}** "
+                    f"({_p['dist']}) — "
+                    + (f"{_n2}번 다녀옴" if _n2 else "아직 못 가봄"))
 
 # ── 대화 표시 ──
 for role,text,emo in st.session_state.chat:
