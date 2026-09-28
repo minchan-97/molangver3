@@ -44,6 +44,28 @@ BODY = {
     "piupiu": {"size": 0.25, "name": "병아리"},    # 아주 작다
 }
 
+# 방마다 결만 있는 게 아니라 **자극**이 있다. 밝고 시끄러운 방과
+# 어둑하고 조용한 방에서 같은 생각이 나올 리 없다.
+ROOM_STIM = {
+    "부엌":   {"밝기": 0.6, "소리": 0.6, "온도": 0.8, "냄새": 0.9},
+    "서재":   {"밝기": 0.5, "소리": 0.1, "온도": 0.5, "냄새": 0.3},
+    "창가":   {"밝기": 0.9, "소리": 0.3, "온도": 0.6, "냄새": 0.4},
+    "작업방": {"밝기": 0.7, "소리": 0.7, "온도": 0.5, "냄새": 0.5},
+    "마당":   {"밝기": 1.0, "소리": 0.5, "온도": 0.4, "냄새": 0.7},
+    "다락":   {"밝기": 0.2, "소리": 0.1, "온도": 0.3, "냄새": 0.6},
+}
+
+
+def stim(room: str) -> dict:
+    s = ROOM_STIM.get(room, {})
+    lift = (s.get("밝기", .5) * .45 + s.get("온도", .5) * .3
+            + s.get("냄새", .5) * .25)
+    return {**s, "lift": round(lift, 2),
+            "note": ("환하다" if s.get("밝기", 0) > 0.8 else
+                     "어둑하다" if s.get("밝기", 1) < 0.3 else ""),
+            "quiet": s.get("소리", 0.5) < 0.2}
+
+
 # 방의 품 — 넓은 방일수록 크다
 ROOM_SPACE = {"부엌": 0.7, "서재": 0.6, "창가": 0.5,
               "작업방": 0.6, "마당": 1.0, "다락": 0.35}
@@ -305,6 +327,8 @@ def stir(state, home: dict, who: str, room: str, moved_from: str = None,
     far = 1.0 + 0.25 * (distance(moved_from, room) if moved_from else 0.0)
     body = fit(who, room)            # 몸과 방이 안 맞으면 더 잘 보인다
     far *= body["notice"]
+    sm = stim(room)                  # 밝은 방은 눈에 들어오고, 조용한 방은 곱씹게 된다
+    far *= (0.85 + 0.3 * sm["lift"])
 
     for w in ROOMS.get(room, [])[:2]:
         old = float((state.interests or {}).get(w, 0.0))
@@ -355,6 +379,7 @@ def tick(sb, state, piu_interests: dict = None, rng=None, log=print) -> dict:
                       "piupiu": prev.get("piupiu") != piu_room},
             "dist": round(distance(prev.get("molang") or mol_room, mol_room), 1),
             "fit": {"molang": mol_fit["feel"], "piupiu": piu_fit["feel"]},
+            "stim": stim(mol_room),
             "dwell_bumped": sorted(set(bumped))[:5], "built": built,
             "objects": {r: [o["name"] for o in v]
                         for r, v in (home.get("objects") or {}).items() if v}}
