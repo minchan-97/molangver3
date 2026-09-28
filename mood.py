@@ -190,3 +190,4 @@ def trend(state, n=20) -> dict:
     return {"unrest_was": round(old, 3), "unrest_now": round(new, 3),
             "direction": "가라앉는 중" if new < old - 0.03
             else "오르는 중" if new > old + 0.03 else "비슷"}
+
