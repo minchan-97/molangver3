@@ -55,6 +55,46 @@ def room_vectors() -> dict:
     return {name: _vec(" ".join(words)) for name, words in ROOMS.items()}
 
 
+# ── 좌표계 ───────────────────────────────────────────────────
+# 방 이름만 있으면 '창가 → 마당'과 '창가 → 다락'이 똑같다. 그건 공간이 아니라
+# 상태 여섯 개다. SOM 격자에 방을 얹으면 **결이 비슷한 방이 가까이** 놓이고,
+# 그때부터 이동에 거리가 생긴다. 먼 방은 뜸해지고, 가까운 방끼리 길이 난다.
+_LAYOUT = {"coords": None, "dist": None}
+
+
+def layout(seed: int = 7) -> dict:
+    """방을 격자 위에 배치하고 방 사이 거리를 낸다 (한 번 계산해 재사용)."""
+    if _LAYOUT["coords"] is not None:
+        return _LAYOUT
+    try:
+        from organism.som import SOM
+        names = list(ROOMS)
+        X = np.array([_vec(" ".join(ROOMS[n])) for n in names])
+        som = SOM(grid=(5, 5), dim=DIM, seed=seed)
+        som.train(X, iters=1500, seed=seed)
+        pos = {}
+        used = set()
+        for n, x in zip(names, X):
+            b = som.bmu_of(x)
+            while b in used:                 # 한 칸에 두 방이 겹치지 않게
+                b = (b + 1) % (som.gh * som.gw)
+            used.add(b)
+            pos[n] = (b // som.gw, b % som.gw)
+        dist = {a: {b: float(abs(pos[a][0] - pos[b][0]) + abs(pos[a][1] - pos[b][1]))
+                    for b in names} for a in names}
+        _LAYOUT.update(coords=pos, dist=dist)
+    except Exception:                        # 실패하면 거리를 모두 1로 (예전 동작)
+        names = list(ROOMS)
+        _LAYOUT.update(
+            coords={n: (0, i) for i, n in enumerate(names)},
+            dist={a: {b: (0.0 if a == b else 1.0) for b in names} for a in names})
+    return _LAYOUT
+
+
+def distance(a: str, b: str) -> float:
+    return layout()["dist"].get(a, {}).get(b, 1.0)
+
+
 def interest_vector(interests: dict, top=8):
     """지금 관심을 하나의 방향으로."""
     items = sorted((interests or {}).items(), key=lambda kv: -kv[1])[:top]
@@ -111,12 +151,15 @@ def move(home: dict, who: str, interests: dict, rng=None) -> str:
     visits = home.get("visits") or {}
     total = max(1, sum(visits.values()))
 
+    here = (home.get("where") or {}).get(who)
     scores = {}
     for name, v in rv.items():
         pull = float(iv @ v) if iv.any() else 0.0
         fresh = 1.0 - 0.5 * (visits.get(name, 0) / total)
         objs = len((home.get("objects") or {}).get(name, []))
-        scores[name] = (pull + 0.15 * math.log1p(objs)) * fresh
+        # 먼 방은 덜 간다 — 거리가 있어야 '돌아다닌다'가 된다
+        far = distance(here, name) if here else 0.0
+        scores[name] = (pull + 0.15 * math.log1p(objs)) * fresh - 0.12 * far
 
     names = list(scores)
     z = [math.exp(scores[n] / max(1e-6, MOVE_TEMP)) for n in names]
@@ -214,15 +257,50 @@ def build(home: dict, who: str, interests: dict, rng=None) -> dict | None:
 
 
 # ── 한 회차 ──────────────────────────────────────────────────
+def stir(state, home: dict, who: str, room: str, moved_from: str = None,
+         weight: float = 0.04) -> list:
+    """
+    방에서 오는 것은 **전부 호기심으로 간다.**
+      · 처음 온 방      낯설다 → 그 방의 결이 더 세게
+      · 멀리서 온 길    멀리 왔다 → 자극이 크다
+      · 남이 놓아둔 것  누가 뒀지? → 그 물건 이름이 관심으로
+    공간이 관심의 밭이라는 건 이런 뜻이다.
+    """
+    bumped = []
+    visits = (home.get("visits") or {}).get(room, 0)
+    first = 1.6 if visits <= 1 else 1.0
+    far = 1.0 + 0.25 * (distance(moved_from, room) if moved_from else 0.0)
+
+    for w in ROOMS.get(room, [])[:2]:
+        old = float((state.interests or {}).get(w, 0.0))
+        state.interests[w] = max(0.0, min(5.0, old + weight * first * far))
+        bumped.append(w)
+
+    # 남이 놓아둔 물건은 더 궁금하다
+    for o in ((home.get("objects") or {}).get(room) or [])[-3:]:
+        nm, by = o.get("name"), o.get("by")
+        if not nm or by == who:
+            continue
+        old = float((state.interests or {}).get(nm, 0.0))
+        state.interests[nm] = max(0.0, min(5.0, old + weight * 1.5))
+        bumped.append(nm)
+    return bumped[:4]
+
+
 def tick(sb, state, piu_interests: dict = None, rng=None, log=print) -> dict:
-    """집에서 일어나는 한 회차. 관심 → 이동 → 머묾 → 꾸미기."""
+    """집에서 일어나는 한 회차. 관심 → 이동 → 머묾 → 자극 → 꾸미기."""
     rng = rng or random.Random(time.time_ns())
     home = load(sb)
+    prev = dict(home.get("where") or {})
 
     mol_room = move(home, "molang", state.interests, rng)
     piu_room = move(home, "piupiu", piu_interests or state.interests, rng)
 
     bumped = dwell(state, mol_room, rng=rng)   # 관심의 방향 (1순위)
+    bumped += stir(state, home, "molang", mol_room, prev.get("molang"))
+    if piu_interests is not None:
+        stir(type("S", (), {"interests": piu_interests})(),
+             home, "piupiu", piu_room, prev.get("piupiu"))
     if piu_interests is not None:              # 피우피우도 제 방의 결을 받는다
         dwell(type("S", (), {"interests": piu_interests})(), piu_room, rng=rng)
     built = [e for e in (build(home, "molang", state.interests, rng),
@@ -236,7 +314,10 @@ def tick(sb, state, piu_interests: dict = None, rng=None, log=print) -> dict:
         + (f" · {built[0]['who']}가 {built[0]['item']}를 {built[0]['what']}"
            if built else ""))
     return {"molang": mol_room, "piupiu": piu_room, "same_room": same,
-            "dwell_bumped": bumped, "built": built,
+            "moved": {"molang": prev.get("molang") != mol_room,
+                      "piupiu": prev.get("piupiu") != piu_room},
+            "dist": round(distance(prev.get("molang") or mol_room, mol_room), 1),
+            "dwell_bumped": sorted(set(bumped))[:5], "built": built,
             "objects": {r: [o["name"] for o in v]
                         for r, v in (home.get("objects") or {}).items() if v}}
 
