@@ -15,6 +15,7 @@ class OrganismState:
     reminisced: list = field(default_factory=list)  # 최근 떠올린 기억 (연달아 같은 것 방지)
     dreams: list = field(default_factory=list)      # 밤에 꾼 꿈 (사실이 아니다)
     moods: list = field(default_factory=list)       # 기분 (네 축)
+    outings: list = field(default_factory=list)     # 바깥 나들이
     last_qe: float = 0.0                            # 지도가 얼마나 어수선한가
     candidates: list = field(default_factory=list)
     quarantine: list = field(default_factory=list)
