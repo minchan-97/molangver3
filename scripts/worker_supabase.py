@@ -176,6 +176,28 @@ def main(mode):
                 except Exception as e:
                     out['home'] = {'error': str(e)[:120]}
 
+                # 바깥 — 관심이 한쪽으로 쌓이면 지형이 생기고, 심심하면 나간다.
+                # 집과 달리 지형은 재배열되지 않는다. 그게 '바깥'이라는 뜻이다.
+                try:
+                    import land as _land
+                    _ld = _land.load(store.sb)
+                    _born = _land.maybe_grow(_ld, state.interests)
+                    _last_mood = (state.moods or [{}])[-1] if getattr(
+                        state, 'moods', None) else {}
+                    _went = _land.maybe_go(_ld, state, _last_mood)
+                    _land.save(store.sb, _ld)
+                    if _went:
+                        state.outings = (getattr(state, 'outings', []) or [])[-40:] + [{
+                            'at': time.time(), 'kind': _went['place']['kind'],
+                            'first': _went['first']}]
+                    out['land'] = {'born': _born and _born['kind'],
+                                   'went': _went and _went['place']['kind'],
+                                   'first': bool(_went and _went['first']),
+                                   'places': [p['kind'] for p in _ld['places']],
+                                   'stim': _land.stim_to_mood(_went)}
+                except Exception as e:
+                    out['land'] = {'error': str(e)[:120]}
+
                 # 피우피우 — 함께 사는 노란 병아리.
                 # 검색이 도는 회차에만 같이 움직인다: 매 회차면 비용이 세 배,
                 # 밤에 한 번이면 둘이 같이 산다는 느낌이 안 난다. 하루 여덟 번쯤.
