@@ -31,6 +31,35 @@ ABSORBABLE = {'user'}
 ALLOWED_SOURCES = {'user', 'assistant', 'search', 'nudge'}
 
 
+# 몰랑이가 자기 느낌을 말한 것을 사용자 사실로 적으면 기억의 주인이 바뀐다.
+# ("바다의 짙은 파란색이 마음을 편안하게 해줬어" → '사용자는 …을 좋아한다')
+# 낱말 겹침만으로는 못 잡는다. 사용자가 바다 얘기를 꺼냈다면 양쪽에 다 있으니까.
+# 그래서 **그 문장이 원래 어느 쪽에 있었는지**를 문장 단위로 본다.
+_SELF_MARK = ("나는", "내가", "나도", "난 ", "내 ", "몰랑이는", "몰랑이가")
+
+
+def _from_assistant(fact: str, question: str, answer: str) -> bool:
+    """사실이 몰랑이 답변의 **한 문장**에서 거의 그대로 온 것인가."""
+    import re
+    norm = lambda t: set(re.findall(r'[가-힣A-Za-z]{2,}', t or ''))
+    f = norm(fact) - {'사용자', '찬기', '그는'}
+    if not f:
+        return False
+    for sent in re.split(r'[.!?\n]', answer or ''):
+        sw = norm(sent)
+        if not sw:
+            continue
+        cover = len(f & sw) / len(f)
+        if cover >= 0.6:
+            # 그 문장이 몰랑이 자기 얘기였나 (주어 표시)
+            if any(m in sent for m in _SELF_MARK):
+                return True
+            # 사용자 말에는 없던 내용인가
+            if len(f & norm(question)) / len(f) < 0.4:
+                return True
+    return False
+
+
 def _closer_to_answer(fact: str, question: str, answer: str) -> bool:
     """
     사실이 사용자의 말이 아니라 몰랑이의 답변에서 나온 것인가.
@@ -257,7 +286,8 @@ class SupabaseIdentity:
                     if fact and fact.upper() != 'NONE':
                         # 사실이 사용자 말보다 몰랑이 답변에 더 가까우면
                         # 그건 몰랑이가 자기 얘기를 한 것이다 → 사용자 사실이 아님.
-                        if _closer_to_answer(fact, question, answer):
+                        if (_closer_to_answer(fact, question, answer)
+                                or _from_assistant(fact, question, answer)):
                             self._quarantine(
                                 fact, 'assistant_echo',
                                 {'question': question[:200],
