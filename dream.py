@@ -87,15 +87,11 @@ def pressure(sb, identity, state=None) -> dict:
     raw = pend * 1.0 + rejected * 0.3 + unsure * 0.6
     H = 1.0 - math.exp(-raw / 12.0)        # 소화 못 한 양 (엔트로피)
 
-    # 소화한 양 — 승인되어 근거가 된 것들이 충동을 뺀다
-    digested = 0
-    try:
-        r = (sb.table("organism_observations").select("id", count="exact")
-             .eq("status", "candidate").eq("fed", True).execute())
-        digested = r.count or 0
-    except Exception:
-        pass
-    L = 1.0 - math.exp(-digested / 30.0)
+    # 소화한 양 — **이번 회차에** 소화한 것만 센다.
+    # 누적으로 세면 지금까지 먹인 게 100건일 때 소화 신호가 영원히 1.0 이 되어
+    # 충동이 0 에서 올라오지 못한다 (어제 먹은 것으로 오늘 배부를 수는 없다).
+    fed_now = int((state and getattr(state, "last_fed", 0)) or 0)
+    L = 1.0 - math.exp(-fed_now / 4.0)
 
     drive = _drive_step(state, H, L) if state is not None else H
     return {"drive": round(drive, 3), "entropy": round(H, 3),
