@@ -84,7 +84,10 @@ def pressure(sb, identity, state=None) -> dict:
     except Exception:
         pass
 
-    raw = pend * 1.0 + rejected * 0.3 + unsure * 0.6
+    # 거부한 것은 **이미 끝난 일**이다. 예전에는 rejected * 0.3 을 더해서
+    # 거부가 쌓일수록 압력이 영원히 안 빠졌다(75건이면 소화해도 0.8 언저리).
+    # 소화할 방법이 없는 것을 압력으로 세면 안 된다.
+    raw = pend * 1.0 + unsure * 0.6
     H = 1.0 - math.exp(-raw / 12.0)        # 소화 못 한 양 (엔트로피)
 
     # 소화한 양 — **이번 회차에** 소화한 것만 센다.
