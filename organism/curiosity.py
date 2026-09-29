@@ -197,7 +197,7 @@ def choose_topic(state, rng=None):
     return rng.choice(ranked[:max(1, min(5, len(ranked)))])
 
 
-def nudge_from_memory(state, facts, weight=0.15, n=2):
+def nudge_from_memory(state, facts, weight=0.15, n=2, cue=None):
     """
     회상에서 탐색 주제를 얻는다.
     대화가 없어도 '문득 떠오른 것'이 관심이 되는 길 — 사람도 그렇다.
@@ -208,7 +208,7 @@ def nudge_from_memory(state, facts, weight=0.15, n=2):
     except Exception:
         return []
     got = reminisce.pick(facts or [], state.interests,
-                         reminisce.recent_ids(state), n=n)
+                         reminisce.recent_ids(state), n=n, cue=cue)
     bumped = []
     for f in got:
         topic = reminisce.to_topic(f)
