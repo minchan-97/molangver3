@@ -124,17 +124,33 @@ def deepen(registry, log=print):
         if len(hist) < SAME_PATH_RUNS or len(set(hist)) != 1:
             continue          # 길이 갈리고 있으면 아직 나눌 필요 없다
 
-        # 마지막 판단 앞에 '아직 모르는 것을 짚는' 단계를 끼운다
+        # 마지막 판단 앞에 새 단계를 끼운다.
+        # **같은 내용을 거듭 붙이지 않는다.** 예전에는 '아는 것과 모르는 것
+        # 가르기'가 한 트리에 세 번 들어갔다. 그러면 깊어진 게 아니라
+        # 같은 말을 세 번 하는 것이고, grown_nodes 숫자만 부푼다.
         path = list(hist[0])
         if len(path) < 2:
             continue
         before, last = path[-2], path[-1]
+
+        # 근거가 쌓인 정도에 따라 **다른 단계**를 붙인다
+        stages = [
+            ("아는 것과 모르는 것 가르기",
+             "지금까지 알아낸 근거로 말할 수 있는 것과, 아직 근거가 없어 "
+             "모른다고 해야 하는 것을 먼저 나눈 뒤 답한다."),
+            ("근거끼리 맞춰 보기",
+             "쌓인 근거들이 서로 맞는지, 어긋나는 게 있는지 먼저 견준다. "
+             "어긋나면 어느 쪽이 더 확실한지 말한다."),
+            ("아직 모르는 쪽을 물어볼 거리로",
+             "모른다고 한 것 중 무엇을 더 알면 판단이 달라지는지 짚는다."),
+        ]
+        used = {n.prompt for n in t.nodes.values()}
+        stage = next((s for s in stages if s[0] not in used), None)
+        if stage is None:
+            continue                       # 붙일 만한 새 단계가 없다
+
         nid = f"grown_{tid}_{added + 1}"
-        node = JudgmentNode(
-            id=nid,
-            prompt="아는 것과 모르는 것 가르기",
-            directive=("지금까지 알아낸 근거로 말할 수 있는 것과, 아직 근거가 "
-                       "없어 모른다고 해야 하는 것을 먼저 나눈 뒤 답한다."))
+        node = JudgmentNode(id=nid, prompt=stage[0], directive=stage[1])
         try:
             t.add_node(node)
             t.add_branch(before, nid, prob=0.5)
