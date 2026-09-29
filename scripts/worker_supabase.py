@@ -273,12 +273,13 @@ def main(mode):
         try:
             import mood as _mood
             from molang_store import SupabaseIdentity as _SI
+            _cur = out.get('curiosity')
+            _rem = out.get('reminisce')
             _ev = {
-                "new": len((out.get('curiosity') or {}).get('ingested', 0) and [1] * 0) or
-                       ((out.get('curiosity') or {}).get('ingested', 0)
-                        if isinstance(out.get('curiosity'), dict) else 0),
-                "settled": (out.get('growth') or {}).get('memory', {}).get('fed', 0),
-                "repeat": len((out.get('reminisce') or []) or []),
+                "new": int(_cur.get('ingested', 0)) if isinstance(_cur, dict) else 0,
+                "settled": int((out.get('growth') or {})
+                               .get('memory', {}).get('fed', 0) or 0),
+                "repeat": len(_rem) if isinstance(_rem, list) else 0,
             }
             _texts = []
             try:
