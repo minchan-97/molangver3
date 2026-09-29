@@ -329,15 +329,22 @@ def load(sb) -> tuple:
     return {}, []
 
 
-def save(sb, gmap: dict, cls: list) -> bool:
+def save(sb, gmap: dict, cls: list) -> dict:
+    """
+    저장. **실패를 삼키지 않는다.**
+    예전에는 molang_map 표가 없어도 조용히 False 만 돌려줘서,
+    로그에는 '의미 지도: 마디 241개' 가 찍히는데 아무 데도 안 남았다.
+    """
     try:
         g = dict(gmap)
         g["edges"] = {f"{a}\t{b}": w for (a, b), w in (gmap.get("edges") or {}).items()}
-        sb.table("molang_map").upsert(
+        res = sb.table("molang_map").upsert(
             {"id": 1, "graph": g, "clusters": cls}, on_conflict="id").execute()
-        return True
-    except Exception:
-        return False
+        if not (getattr(res, "data", None) or []):
+            return {"ok": False, "error": "저장은 됐는데 확인이 안 됨"}
+        return {"ok": True, "bytes": len(str(g))}
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:200]}
 
 
 def rebuild(sb, limit=800, log=print) -> dict:
@@ -379,16 +386,20 @@ def rebuild(sb, limit=800, log=print) -> dict:
     except Exception as e:
         log(f"  끌림 계산 건너뜀: {str(e)[:60]}")
 
-    save(sb, g, r["clusters"])
-    log(f"  의미 지도: {summary(g, r['clusters'])}")
+    saved = save(sb, g, r["clusters"])
+    if not saved.get("ok"):
+        log(f"  ⚠️ 지도 저장 실패: {saved.get('error')}")
+        log("     sql/19_semantic_map.sql 을 실행했는지 확인하세요")
+    log(f"  의미 지도: {summary(g, r['clusters'])}"
+        + ("" if saved.get("ok") else "  (저장 안 됨)"))
     return {"nodes": len(g.get("freq") or {}), "edges": len(g.get("edges") or {}),
             "clusters": len(r["clusters"]), "split": r["split"],
             "unsure": r["unsure"][:6],
-            "unsettled": [u["word"] for u in (r.get("unsettled") or [])][:6]}
+            "unsettled": [u["word"] for u in (r.get("unsettled") or [])][:6],
+            "saved": saved}
 
 
 def summary(gmap: dict, cls: list) -> str:
     return (f"마디 {len(gmap.get('freq') or {})}개 · 실 "
             f"{len(gmap.get('edges') or {})}개 · 갈래 {len(cls)}개 "
             f"(자료 {gmap.get('docs')}건)")
-
