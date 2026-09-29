@@ -263,6 +263,12 @@ def main(mode):
             out['growth'] = {'error': str(e)[:200],
                              'where': _where(), 'type': type(e).__name__}
 
+        try:    # 이번 회차에 소화한 양 (충동을 빼는 신호)
+            state.last_fed = int((out.get('growth') or {})
+                                 .get('memory', {}).get('fed', 0) or 0)
+        except Exception:
+            state.last_fed = 0
+
         # 기분 — 네 축. 판단을 대신하지 않고 가중치로만 작용한다.
         try:
             import mood as _mood
