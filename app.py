@@ -247,6 +247,9 @@ with st.sidebar:
     except Exception:
         pass
 
+    if st.session_state.get("_guard_note"):
+        st.caption("🛑 " + st.session_state["_guard_note"])
+
     _bump = st.session_state.get("_last_bumped")
     if _bump:
         st.caption(f"🌱 요즘 관심: {', '.join(_bump[:5])}")
@@ -652,6 +655,12 @@ if msg or photo:
         time_ctx = mtime.time_context(last_ts)
         self_ctx = mself.to_self_prompt(u)   # 자기 인식 (LLM 독립)
 
+        # 모르는 것을 지어내지 못하게 (말하기 전 단계)
+        import groundcheck as _gc
+        guard_ctx = _gc.guard_prompt(q if not photo else "", u.identity) \
+            + _gc.self_report(q if not photo else "", u.identity,
+                              st.session_state.get("_last_unknown"))
+
         # 지금 어디에 있는가. 집은 워커가 움직이는데 그 사실이 대화에 안 들어가면
         # 몰랑이는 제 집을 모르는 채로 말하게 된다 (공간과 자기가 따로 논다).
         place_ctx = ""
@@ -685,7 +694,7 @@ if msg or photo:
             pb = base64.b64encode(photo.getvalue()).decode()
             try:
                 r = client.chat.completions.create(model="gpt-4o",
-                    messages=[{"role":"system","content":u.identity.to_system_prompt(question=q)+"\n"+self_ctx+"\n"+place_ctx+"\n"+time_ctx},
+                    messages=[{"role":"system","content":u.identity.to_system_prompt(question=q)+"\n"+self_ctx+"\n"+place_ctx+"\n"+time_ctx+"\n"+guard_ctx},
                         {"role":"user","content":[
                             {"type":"text","text":"이 사진 보고 몰랑이답게 반응해줘!"},
                             {"type":"image_url","image_url":{"url":f"data:{photo.type};base64,{pb}"}}]}],
@@ -695,7 +704,8 @@ if msg or photo:
             result = None
         else:
             bg = self_ctx + ((" " + place_ctx) if place_ctx else "") \
-                 + ((" " + time_ctx) if time_ctx else "")
+                 + ((" " + time_ctx) if time_ctx else "") \
+                 + (("\n" + guard_ctx) if guard_ctx else "")
             # 최근 대화를 맥락으로 — 이게 없으면 몰랑이가 자기가 방금 한 말도 모른다
             _recent_lines = []
             for _r, _t, _ in st.session_state.chat[-7:-1]:
@@ -716,6 +726,19 @@ if msg or photo:
             result = u.think(q_with_time, choose_fn=choose_fn, answer_fn=answer_fn,
                              classify_fn=classify_fn, tree_factory=designer)
             answer = result["answer"] or "히힛 🐰"
+
+        # 기억에 없는 이름을 댔으면 그 문장을 걷어낸다.
+        # (한로로 곡을 네 번 지어낸 일이 이 자리에서 막힌다)
+        if not photo:
+            _chk = _gc.check_answer(answer, q, u.identity)
+            if not _chk["ok"]:
+                answer = _chk["fixed"]
+                st.session_state["_last_unknown"] = _chk["unknown"]
+                st.session_state["_guard_note"] = (
+                    "기억에 없는 이름을 덜어냈어요: "
+                    + ", ".join(_chk["unknown"][:4]))
+            else:
+                st.session_state.pop("_guard_note", None)
 
         emotion = skin.detect_emotion(client, answer)
         # 표정 없으면 생성+캐시 (identity에 저장 → pkl에 같이 감)
