@@ -655,6 +655,32 @@ if msg or photo:
         time_ctx = mtime.time_context(last_ts)
         self_ctx = mself.to_self_prompt(u)   # 자기 인식 (LLM 독립)
 
+        # 의미 지도 — 물어본 말에 딸린 것과 **비어 있는 것**을 함께 준다.
+        # 빈자리를 보여주면 지어낼 자리가 줄어든다.
+        map_ctx = ""
+        try:
+            import semantic_map as _smap
+            _g, _cl = _smap.load(sb)
+            if _g.get("edges"):
+                import re as _re
+                import word_gravity as _wg
+                _qw = [w for w in _re.findall(r'[가-힣A-Za-z]{2,}', q)][:4]
+                _mass = _g.get("mass") or _wg.masses(_g, None)
+                # 이웃을 **끌림 순서**로 준다. 굵기순이면 '바다 → 다운로드'가
+                # 앞에 오지만, 끌림순이면 무겁고 여러 곳에 걸친 쪽이 앞에 온다.
+                _body = _wg.context_line(_g, _mass, _cl, _qw)
+                _lines = [_body] if _body else []
+                for _w in _qw:
+                    _gp = _smap.gaps(_g, _cl, _w)
+                    if _gp.get("missing"):
+                        _lines.append(f"    ({_w}에서 아직 모르는 쪽: "
+                                      f"{', '.join(_gp['missing'][:4])})")
+                if _lines:
+                    map_ctx = ("[내 기억 지도에서 이어진 것]\n"
+                               + "\n".join(_lines) + "\n")
+        except Exception:
+            map_ctx = ""
+
         # 모르는 것을 지어내지 못하게 (말하기 전 단계)
         import groundcheck as _gc
         guard_ctx = _gc.guard_prompt(q if not photo else "", u.identity) \
@@ -705,6 +731,7 @@ if msg or photo:
         else:
             bg = self_ctx + ((" " + place_ctx) if place_ctx else "") \
                  + ((" " + time_ctx) if time_ctx else "") \
+                 + (("\n" + map_ctx) if map_ctx else "") \
                  + (("\n" + guard_ctx) if guard_ctx else "")
             # 최근 대화를 맥락으로 — 이게 없으면 몰랑이가 자기가 방금 한 말도 모른다
             _recent_lines = []
