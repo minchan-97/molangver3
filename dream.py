@@ -196,9 +196,19 @@ def _linger(pieces: list[dict], identity, rng) -> str | None:
         if p.get("topic"):
             cands.append(str(p["topic"]))
     try:
-        from organism.curiosity import _is_topic_like, strip_josa, canon_name
-        cands = [canon_name(strip_josa(w)) for w in cands]
-        cands = [w for w in cands if _is_topic_like(w)]
+        from organism.curiosity import (_is_topic_like, strip_josa, canon_name,
+                                        TALK_WORDS)
+        cleaned = []
+        for w in cands:
+            w = canon_name(strip_josa(w))
+            # 관심사와 같은 잣대로 거른다. 안 그러면 '담긴', '있는' 같은
+            # 활용형이 꿈에서 남아 관심으로 올라간다.
+            if not _is_topic_like(w) or w in TALK_WORDS:
+                continue
+            if len(w) < 2 or w.endswith(("긴", "는", "던", "들")):
+                continue
+            cleaned.append(w)
+        cands = cleaned
     except Exception:
         cands = [w for w in cands if 2 <= len(w) <= 8]
     cands = list(dict.fromkeys(cands))
@@ -221,9 +231,15 @@ def _linger(pieces: list[dict], identity, rng) -> str | None:
 
         score = tangle * (0.4 + 0.6 * strange)
         score = score + rng.random() * 0.05        # 같은 게 계속 남지 않게
-        return cands[int(np.argmax(score))]
+        order = np.argsort(-score)[:5]
+        # 왜 그 낱말이 남았는지 되짚을 수 있게 후보와 점수를 함께 돌려준다.
+        # (pieces 에는 주제만 찍혀서, 본문에서 올라온 낱말은 출처를 알 수 없었다)
+        why = [{"word": cands[i], "score": round(float(score[i]), 3),
+                "tangle": round(float(tangle[i]), 3),
+                "strange": round(float(strange[i]), 3)} for i in order]
+        return cands[int(order[0])], why
     except Exception:
-        return rng.choice(cands)
+        return rng.choice(cands), []
 
 
 DREAM_SYSTEM = """너는 몰랑이(흰 토끼)가 꾼 꿈을 적는다.
@@ -259,7 +275,7 @@ def dream(sb, identity, state, api_key=None, log=print) -> dict:
     # 예전에는 LLM 이 쓴 장면에서 lingering 을 골랐다. 그러면 꿈에서 나온
     # 관심의 출처가 바깥 모델이 된다. 여기서는 겹친 조각들 중
     # '가장 얽혀 있고 가장 낯선' 것을 로컬 계산으로 고른다.
-    lingering = _linger(pieces, identity, rng)
+    lingering, linger_why = _linger(pieces, identity, rng)
     text = feeling = None
     if api_key:
         try:
@@ -283,7 +299,9 @@ def dream(sb, identity, state, api_key=None, log=print) -> dict:
 
     entry = {"at": time.time(), "text": text, "feeling": feeling,
              "lingering": lingering, "energy": energy, "drive": p["drive"],
-             "pieces": [x.get("topic") or x["text"][:20] for x in pieces]}
+             "pieces": [x.get("topic") or x["text"][:20] for x in pieces],
+             "piece_texts": [x.get("text", "")[:70] for x in pieces],
+             "linger_why": linger_why}
 
     dreams = list(getattr(state, "dreams", []) or [])
     dreams.append(entry)
@@ -308,11 +326,15 @@ def dream(sb, identity, state, api_key=None, log=print) -> dict:
         sb.table("molang_dreams").insert({
             "text": text[:800], "feeling": feeling,
             "lingering": lingering, "energy": energy,
-            "drive": p["drive"], "pieces": entry["pieces"]}).execute()
+            "drive": p["drive"], "pieces": entry["pieces"],
+            "linger_why": linger_why}).execute()
     except Exception as e:
         log(f"  꿈 저장 실패: {str(e)[:80]}")
 
     log(f"  꿈: {str(text)[:60]} (느낌 {feeling}, 에너지 {energy})")
+    if linger_why:
+        log("    남은 낱말 후보: " + " · ".join(
+            f"{x['word']}({x['score']})" for x in linger_why[:3]))
     return {"slept": True, "dreamed": True, "dream": entry, "bumped": bumped}
 
 
