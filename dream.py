@@ -34,6 +34,8 @@ import time
 
 DRIVE_ALPHA = 0.25        # 충동이 쌓이는 속도 (미처리량에 비례)
 DRIVE_BETA = 0.30         # 처리하면 빠지는 속도
+DRIVE_LEAK = 0.12         # 가만히 둬도 새어 나가는 양 (시간이 푸는 몫)
+CALM_BELOW = 0.20         # 엔트로피가 이보다 낮으면 '할 일이 없는' 상태
 DREAM_THRESHOLD = 0.45    # 이 이상 쌓여야 꿈을 꾼다
 TEMP = 2.2                # 꿈의 온도 (깨어 있을 때는 0.3 안팎)
 MAX_ENERGY = 1.8          # 정체성에서 이만큼 벗어나면 깬다
@@ -97,6 +99,14 @@ def pressure(sb, identity, state=None) -> dict:
     L = 1.0 - math.exp(-fed_now / 4.0)
 
     drive = _drive_step(state, H, L) if state is not None else H
+
+    # 검토할 것도 없고 먹일 것도 없으면 충동이 영영 안 빠진다.
+    # (격리 0, fed 0 인데 drive 가 1.0 에 붙어 있던 상태)
+    # 사람도 할 일이 없으면 긴장이 저절로 풀린다 — 시간이 푸는 몫을 둔다.
+    if H < CALM_BELOW and state is not None:
+        drive = max(0.0, drive - DRIVE_LEAK * (1.0 - H / max(CALM_BELOW, 1e-6)))
+        state.drive = round(drive, 4)
+
     return {"drive": round(drive, 3), "entropy": round(H, 3),
             "digest": round(L, 3), "pending": pend,
             "rejected": rejected, "unsure": unsure}
@@ -347,4 +357,3 @@ def recent(sb, limit=5) -> list[dict]:
                 .order("id", desc=True).limit(limit).execute().data) or []
     except Exception:
         return []
-
