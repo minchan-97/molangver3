@@ -66,7 +66,31 @@ def collect(sb, registry=None, state=None, identity=None) -> dict:
         out["musings"] = list(getattr(state, "musings", []) or [])
         out["cycle"] = getattr(state, "cycle", None)
 
-    # 3) 서버 기록
+    # 3) 집·바깥·기분·꿈 — 이것들이 빠지면 pkl 로는 작동 여부를 볼 수 없다
+    if state is not None:
+        out["moods"] = list(getattr(state, "moods", []) or [])
+        out["dreams_state"] = list(getattr(state, "dreams", []) or [])
+        out["outings"] = list(getattr(state, "outings", []) or [])
+        out["reminisced"] = list(getattr(state, "reminisced", []) or [])
+        out["drive"] = float(getattr(state, "drive", 0.0) or 0.0)
+    if sb is not None:
+        try:
+            import home as _home
+            out["home"] = _home.load(sb)
+            out["home_coords"] = {k: list(v) for k, v in
+                                  _home.layout()["coords"].items()}
+        except Exception as e:
+            out["home"] = {"_error": str(e)[:80]}
+        try:
+            import land as _land
+            out["land"] = _land.load(sb)
+        except Exception as e:
+            out["land"] = {"_error": str(e)[:80]}
+        out["dreams"] = _rows(sb, "molang_dreams", limit=100)
+        out["peer_talks"] = _rows(sb, "molang_peer_talks", limit=100)
+        out["purposes"] = _rows(sb, "molang_purposes", limit=50)
+
+    # 4) 서버 기록
     if sb is not None:
         out["observations"] = _rows(
             sb, "organism_observations",
@@ -76,7 +100,7 @@ def collect(sb, registry=None, state=None, identity=None) -> dict:
         out["quarantine"] = _rows(sb, "molang_quarantine")
         out["runs"] = _rows(sb, "organism_runs", limit=300)
 
-    # 4) 사실
+    # 5) 사실
     if identity is not None:
         try:
             out["facts"] = [dict(f) for f in identity.learned_facts]
@@ -84,7 +108,7 @@ def collect(sb, registry=None, state=None, identity=None) -> dict:
         except Exception:
             pass
 
-    # 5) 한눈에 보는 집계
+    # 6) 한눈에 보는 집계
     tr = out.get("trees") or {}
     out["meta"].update({
         "tree_count": len(tr) if isinstance(tr, dict) else 0,
@@ -97,6 +121,15 @@ def collect(sb, registry=None, state=None, identity=None) -> dict:
         "musings": len(out.get("musings") or []),
         "facts": len(out.get("facts") or []),
         "cycle": out.get("cycle"),
+        "moods": len(out.get("moods") or []),
+        "dreams": len(out.get("dreams") or []),
+        "outings": len(out.get("outings") or []),
+        "places": len(((out.get("land") or {}).get("places")) or []),
+        "objects": sum(len(v) for v in
+                       ((out.get("home") or {}).get("objects") or {}).values()),
+        "drive": out.get("drive"),
+        "purposes": len(out.get("purposes") or []),
+        "peer_talks": len(out.get("peer_talks") or []),
     })
     return out
 
@@ -109,4 +142,6 @@ def summary_line(data: dict) -> str:
     m = data.get("meta", {})
     return (f"사고유형 {m.get('tree_count')}개 · 늘린 단계 {m.get('grown_nodes')}개 · "
             f"사고기억 {m.get('tree_memory')}개 · 관심사 {m.get('interests')}개 · "
-            f"관측 {m.get('observations')}건 · 생각흔적 {m.get('musings')}개")
+            f"관측 {m.get('observations')}건 · 꿈 {m.get('dreams')}개 · "
+            f"지형 {m.get('places')}곳 · 물건 {m.get('objects')}개 · "
+            f"목적 {m.get('purposes')}개")
