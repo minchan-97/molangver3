@@ -347,3 +347,4 @@ def recent(sb, limit=5) -> list[dict]:
                 .order("id", desc=True).limit(limit).execute().data) or []
     except Exception:
         return []
+
