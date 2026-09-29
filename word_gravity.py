@@ -177,3 +177,4 @@ def context_line(gmap: dict, mass: dict, clusters: list, words: list,
                          f"{', '.join([h['branch']] + [r[0] for r in h['rivals']])} "
                          "사이에서 자리를 못 잡음 — 단정하지 말 것)")
     return "\n".join(lines)
+
