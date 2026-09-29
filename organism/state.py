@@ -17,6 +17,7 @@ class OrganismState:
     moods: list = field(default_factory=list)       # 기분 (네 축)
     outings: list = field(default_factory=list)     # 바깥 나들이
     last_qe: float = 0.0                            # 지도가 얼마나 어수선한가
+    drive: float = 0.0                              # 쌓인 충동 (프로이트)
     candidates: list = field(default_factory=list)
     quarantine: list = field(default_factory=list)
     rejected: list = field(default_factory=list)
