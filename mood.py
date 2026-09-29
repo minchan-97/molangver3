@@ -68,7 +68,8 @@ def measure(sb, identity, state=None) -> dict:
 
     qe = float(getattr(state, "last_qe", 0.0) or 0.0) if state else 0.0
 
-    # 미확신·격리가 많을수록, 지도가 어수선할수록 높다
+    # 미확신·격리가 많을수록, 지도가 어수선할수록 높다.
+    # 거부는 세지 않는다 — 이미 끝난 일이라 소화할 방법이 없다.
     raw = unsure * 0.8 + pending * 0.5 + qe * 6.0
     unrest = 1.0 - math.exp(-raw / 14.0)
     return {"unrest": round(unrest, 3), "unsure": unsure,
@@ -190,4 +191,3 @@ def trend(state, n=20) -> dict:
     return {"unrest_was": round(old, 3), "unrest_now": round(new, 3),
             "direction": "가라앉는 중" if new < old - 0.03
             else "오르는 중" if new > old + 0.03 else "비슷"}
-
