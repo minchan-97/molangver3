@@ -362,6 +362,63 @@ with st.sidebar:
     except Exception:
         pass
 
+    # 🕸️ 기억 지도 — 무엇이 무엇에 끌리는지, 무엇이 아직 엉켜 있는지
+    try:
+        import semantic_map as _sm
+        import word_gravity as _wgv
+        _gm, _gcl = _sm.load(sb)
+        if _gm.get("edges"):
+            _mass = _gm.get("mass") or {}
+            st.markdown("---")
+            st.markdown("### 🕸️ 기억 지도")
+            st.caption(f"마디 {len(_gm.get('freq') or {})}개 · "
+                       f"실 {len(_gm.get('edges') or {})}개 · "
+                       f"갈래 {len(_gcl)}개")
+
+            # 무거운 낱말 = 친숙한 것
+            _heavy = sorted(((w, m) for w, m in _mass.items() if m > 0),
+                            key=lambda kv: -kv[1])[:8]
+            if _heavy:
+                st.caption("**친숙한 것** · " +
+                           " · ".join(f"{w}({m:.1f})" for w, m in _heavy))
+
+            # 한 낱말이 어디로 끌리는지 직접 보기
+            _pick = st.selectbox(
+                "무엇이 어디로 끌리는지 보기",
+                [w for w, _ in _heavy] + [w for w in (_gm.get("freq") or {})
+                                          if w not in dict(_heavy)][:40],
+                key=uk("grav_pick"))
+            if _pick:
+                _att = _wgv.attracted(_gm, _mass, _pick, 6)
+                if _att:
+                    _mx = max(p for _, p in _att) or 1
+                    for _n, _p in _att:
+                        _bar = "█" * max(1, int(10 * _p / _mx))
+                        st.caption(f"　{_pick} → **{_n}** {_bar} {_p:.2f}")
+                else:
+                    st.caption("　아직 끌리는 데가 없어요")
+                _h = _wgv.home_branch(_gm, _mass, _gcl, _pick)
+                if _h.get("branch"):
+                    st.caption(
+                        f"　제 자리: **{_h['branch']}** ({_h['score']:.1f})"
+                        + ("" if _h["settled"] else
+                           " ← 아직 " + ", ".join(r[0] for r in _h["rivals"])
+                           + " 사이에서 흔들림"))
+
+            # 갈래와 확신
+            with st.expander(f"갈래 {len(_gcl)}개"):
+                for _c in _gcl[:12]:
+                    _conf = _c.get("confidence", 0)
+                    _mark = ("🔴" if _c.get("unsure") else
+                             "🟡" if _conf < 0.6 else "🟢")
+                    st.caption(f"{_mark} **{_c['name']}** ({_c['size']}개, "
+                               f"확신 {_conf:.2f})"
+                               + (f" ← {_c['from']}에서 갈라짐"
+                                  if _c.get("from") else ""))
+                    st.caption("　" + ", ".join(_c["members"][:8]))
+    except Exception as _e:
+        st.caption(f"지도를 못 불러왔어요: {str(_e)[:50]}")
+
     # 목적 제안 — 몰랑이가 "이걸 목적으로 삼아도 될까?" 하고 물어온 것
     try:
         # sent_at 은 '말을 걸었나'이지 '결정했나'가 아니다.
