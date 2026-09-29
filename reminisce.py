@@ -54,10 +54,41 @@ def _warmth(text: str) -> float:
     return 1.0 + 0.25 * sum(1 for w in WARM if w in (text or ""))
 
 
+def cue_from(place: str = "", room_words=None, topic: str = "",
+             said: str = "") -> set:
+    """
+    지금의 계기. 사람이 옛일을 떠올리는 건 대개 아무 때나가 아니라
+    **비슷한 상황에 놓였을 때**다.
+      · 어느 방/지형에 있나 (그 곳의 결)
+      · 방금 무엇을 찾아봤나
+      · 방금 무슨 말을 들었나
+    """
+    cue = set()
+    for src in (place, topic, said):
+        if src:
+            cue |= set(TOKEN.findall(str(src)))
+    # 방의 결은 한 글자도 살린다 ('빵', '흙', '별' 이 계기가 될 수 있다)
+    for w in (room_words or []):
+        cue.add(str(w))
+    try:
+        from organism.curiosity import strip_josa, canon_name
+        cue = {canon_name(strip_josa(w)) if len(w) >= 2 else w for w in cue}
+    except Exception:
+        pass
+    return {w for w in cue if w}
+
+
 def pick(facts: list[dict], interests: dict = None, recent_ids=(),
-         n: int = 1) -> list[dict]:
-    """떠올릴 기억 고르기. 오래 안 꺼낸 것 우선."""
+         n: int = 1, cue: set = None) -> list[dict]:
+    """
+    떠올릴 기억 고르기.
+      기본  오래 안 꺼냈고 굳어 있는 것
+      계기  지금 상황과 겹치면 **훨씬 세게** 끌려 나온다
+            (바다에 다녀온 날 예전 바다 기억이 떠오르는 것)
+    """
     interests = interests or {}
+    cue = cue or set()
+    cue_stem = {w[:2] for w in cue if len(w) >= 2}
     itok = set()
     for t in list(interests)[:10]:
         itok |= set(TOKEN.findall(t))
@@ -68,15 +99,30 @@ def pick(facts: list[dict], interests: dict = None, recent_ids=(),
         if len(text) < 8 or f.get("id") in recent_ids:
             continue
         age = _age_days(f)
-        if age < COOLDOWN_DAYS:
-            continue                     # 최근 것은 회상이 아니다
+        ftok = set(TOKEN.findall(text))
+
+        # 계기가 겹치면 '최근 것은 회상이 아니다' 규칙도 누그러진다.
+        # 같은 곳에 다시 서면 어제 일도 떠오른다.
+        # 한 글자 계기('빵')는 글자 포함으로 본다
+        hit = (bool(cue & ftok) or bool(cue_stem & {w[:2] for w in ftok})
+               or any(len(c) == 1 and c in text for c in cue))
+        if age < COOLDOWN_DAYS and not hit:
+            continue
+
         s = (f.get("strength") or 0.5)
         score = (1.0 + age / 7.0) * s * _warmth(text)
-        if itok & set(TOKEN.findall(text)):
+        if itok & ftok:
             score *= 1.6                 # 지금 관심과 이어지면 더 잘 떠오른다
-        scored.append((score, f))
+        if hit:
+            score *= 2.4                 # 계기가 부르면 가장 세게
+        scored.append((score, f, hit))
     scored.sort(key=lambda x: -x[0])
-    return [f for _, f in scored[:n]]
+    out = []
+    for sc, f, hit in scored[:n]:
+        f = dict(f)
+        f["_by_cue"] = hit               # 계기로 떠오른 것인지 표시
+        out.append(f)
+    return out
 
 
 def to_topic(fact: dict) -> str | None:
@@ -103,10 +149,12 @@ def to_topic(fact: dict) -> str | None:
     return cand[-1]
 
 
-def line(fact: dict) -> str:
-    """회상 한 마디. 사실을 그대로 읊지 않고 떠올린 투로."""
+def line(fact: dict, place: str = "") -> str:
+    """회상 한 마디. 계기로 떠오른 것이면 그 자리를 말한다."""
     t = (fact.get("text") or "").rstrip(".")
     t = re.sub(r"^(사용자는|찬기는|그는)\s*", "", t)
+    if fact.get("_by_cue") and place:
+        return f"{place}에 있으니까 생각났는데, {t} … 그거 요즘은 어때?"
     return f"그러고 보니, {t} … 그거 요즘은 어때?"
 
 
