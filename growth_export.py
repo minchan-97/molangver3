@@ -86,6 +86,22 @@ def collect(sb, registry=None, state=None, identity=None) -> dict:
             out["land"] = _land.load(sb)
         except Exception as e:
             out["land"] = {"_error": str(e)[:80]}
+        try:        # 기억 지도와 낱말 끌림
+            import semantic_map as _sm
+            import word_gravity as _wgv
+            _gm, _gcl = _sm.load(sb)
+            if _gm.get("edges"):
+                _mass = _gm.get("mass") or {}
+                out["map"] = {
+                    "nodes": len(_gm.get("freq") or {}),
+                    "edges": len(_gm.get("edges") or {}),
+                    "clusters": _gcl,
+                    "mass_top": sorted(((w, m) for w, m in _mass.items() if m > 0),
+                                       key=lambda kv: -kv[1])[:30],
+                    "unsettled": _wgv.unsettled(_gm, _mass, _gcl, 15),
+                }
+        except Exception as e:
+            out["map"] = {"_error": str(e)[:80]}
         out["dreams"] = _rows(sb, "molang_dreams", limit=100)
         out["peer_talks"] = _rows(sb, "molang_peer_talks", limit=100)
         out["purposes"] = _rows(sb, "molang_purposes", limit=50)
@@ -129,6 +145,8 @@ def collect(sb, registry=None, state=None, identity=None) -> dict:
                        ((out.get("home") or {}).get("objects") or {}).values()),
         "drive": out.get("drive"),
         "purposes": len(out.get("purposes") or []),
+        "map_nodes": (out.get("map") or {}).get("nodes"),
+        "map_clusters": len(((out.get("map") or {}).get("clusters")) or []),
         "peer_talks": len(out.get("peer_talks") or []),
     })
     return out
