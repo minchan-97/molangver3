@@ -274,6 +274,9 @@ def brave_search(query, api_key, count=5):
 
 
 def expand_query_with_openai(topic, identity_prompt="", model=None):
+    # 이름은 넓히지 않는다. '한로로'를 풀어 쓰면 다른 것이 된다.
+    if topic in NAME_CANON or (len(topic) <= 4 and _looks_proper(topic)):
+        return topic
     key = os.environ.get('OPENAI_API_KEY')
     if not key:
         return topic
@@ -309,6 +312,20 @@ def expand_query_with_openai(topic, identity_prompt="", model=None):
         bad = ('찬기', '오,', '이거야', '검색어', '안녕', '히힛', '!')
         if any(b in q for b in bad) or len(q) > 60 or not q:
             return topic                   # 의심스러우면 주제를 그대로
+
+        # **주제가 확장된 검색어에 남아 있어야 한다.**
+        # 없으면 LLM 이 다른 말로 바꾼 것이다 — 실제로 '한로로'가 '한로'(절기)로,
+        # '몰랑이'가 '모링가'로 바뀌어 엉뚱한 자료를 긁어왔다.
+        # 이름은 비슷한 말이 많아 특히 잘 어긋난다.
+        core = topic.strip()
+        if core and core not in q:
+            # 이름이면 **정확히** 있어야 한다. 앞 두 글자만 맞으면
+            # '한로로'가 '한로'(절기)로 바뀐 것도 통과해 버린다.
+            if _looks_proper(core) or core in NAME_CANON:
+                return topic
+            head = core[:2]
+            if not (len(core) >= 3 and head in q):
+                return topic               # 주제를 잃었으면 원래대로
         return q[:160]
     except Exception:
         return topic
