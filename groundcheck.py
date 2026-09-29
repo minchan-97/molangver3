@@ -129,3 +129,4 @@ def self_report(question: str, identity, last_unknown=None) -> str:
         f"- 지금 기억하는 사실은 {n}개, 그중 확신하는 건 {sure}개다.{miss}\n"
         "- '기억이 흐려졌다', '헷갈렸다' 같은 사람 흉내를 내지 마라.\n"
         "- 사실대로 말한다: 기억에 없으면 없다고, 확신이 낮으면 낮다고.\n")
+
