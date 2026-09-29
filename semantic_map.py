@@ -391,3 +391,4 @@ def summary(gmap: dict, cls: list) -> str:
     return (f"마디 {len(gmap.get('freq') or {})}개 · 실 "
             f"{len(gmap.get('edges') or {})}개 · 갈래 {len(cls)}개 "
             f"(자료 {gmap.get('docs')}건)")
+
