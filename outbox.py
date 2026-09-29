@@ -117,10 +117,20 @@ def collect_signals(sb, identity=None, registry=None, state=None) -> list[dict]:
     if identity is not None:
         try:
             import reminisce
-            got = reminisce.pick(list(identity.learned_facts), n=1)
+            place = ""
+            cue = set()
+            try:
+                import home as _hm
+                _hh = _hm.load(sb)
+                place = (_hh.get("where") or {}).get("molang") or ""
+                cue = reminisce.cue_from(place=place,
+                                         room_words=_hm.ROOMS.get(place, []))
+            except Exception:
+                pass
+            got = reminisce.pick(list(identity.learned_facts), n=1, cue=cue)
             if got:
                 out.append({"rule": "reminisce", "weight": 2,
-                            "detail": reminisce.line(got[0]),
+                            "detail": reminisce.line(got[0], place),
                             "fact_id": got[0].get("id")})
         except Exception:
             pass
