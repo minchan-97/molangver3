@@ -879,3 +879,4 @@ if msg or photo:
     if photo:
         st.session_state.photo_key += 1   # 업로더 리셋 → 같은 사진 재반응 방지
     st.rerun()
+
