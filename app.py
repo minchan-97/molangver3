@@ -712,6 +712,35 @@ if msg or photo:
         time_ctx = mtime.time_context(last_ts)
         self_ctx = mself.to_self_prompt(u)   # 자기 인식 (LLM 독립)
 
+        # 지금 어디에 있는가. 집은 워커가 움직이는데 그 사실이 대화에 안 들어가면
+        # 몰랑이는 제 집을 모르는 채로 말하게 된다 (공간과 자기가 따로 논다).
+        place_ctx = ""
+        try:
+            import home as _hm
+            _hh = _hm.load(sb)
+            _room = (_hh.get("where") or {}).get("molang")
+            _piu_room = (_hh.get("where") or {}).get("piupiu")
+            _here = [o.get("name") for o in
+                     (_hh.get("objects") or {}).get(_room, [])][-4:]
+            _fit = _hm.fit("molang", _room) if _room else {}
+            if _room:
+                place_ctx = (
+                    f"[지금 있는 곳] 너는 {_room}에 있다."
+                    + (f" 너는 대왕토끼라 여기가 {_fit['feel']}."
+                       + (f" {_fit['note']}." if _fit.get("note") else "")
+                       if _fit else "")
+                    + (f" 여기엔 {', '.join(map(str, _here))}가 있다." if _here else "")
+                    + (f" 피우피우는 {_piu_room}에 있다."
+                       if _piu_room and _piu_room != _room
+                       else " 피우피우도 같은 방에 있다." if _piu_room else "")
+                    + " 방을 옮기거나 물건을 놓는 일은 혼자 있을 때 일어난다."
+                      " 물으면 지금 자리를 그대로 말하라. 지어내지 마라.")
+                u.identity.place = _room     # 기억에 '어디서'가 남게
+        except Exception:
+            place_ctx = ""
+        # ── 내부: Arcogit이 생각 (유형판별→트리→기억주입→답) ──
+        q = msg or "이 사진 보고 몰랑이답게 반응해줘"
+
         # 의미 지도 — 물어본 말에 딸린 것과 **비어 있는 것**을 함께 준다.
         # 빈자리를 보여주면 지어낼 자리가 줄어든다.
         map_ctx = ""
@@ -744,34 +773,6 @@ if msg or photo:
             + _gc.self_report(q if not photo else "", u.identity,
                               st.session_state.get("_last_unknown"))
 
-        # 지금 어디에 있는가. 집은 워커가 움직이는데 그 사실이 대화에 안 들어가면
-        # 몰랑이는 제 집을 모르는 채로 말하게 된다 (공간과 자기가 따로 논다).
-        place_ctx = ""
-        try:
-            import home as _hm
-            _hh = _hm.load(sb)
-            _room = (_hh.get("where") or {}).get("molang")
-            _piu_room = (_hh.get("where") or {}).get("piupiu")
-            _here = [o.get("name") for o in
-                     (_hh.get("objects") or {}).get(_room, [])][-4:]
-            _fit = _hm.fit("molang", _room) if _room else {}
-            if _room:
-                place_ctx = (
-                    f"[지금 있는 곳] 너는 {_room}에 있다."
-                    + (f" 너는 대왕토끼라 여기가 {_fit['feel']}."
-                       + (f" {_fit['note']}." if _fit.get("note") else "")
-                       if _fit else "")
-                    + (f" 여기엔 {', '.join(map(str, _here))}가 있다." if _here else "")
-                    + (f" 피우피우는 {_piu_room}에 있다."
-                       if _piu_room and _piu_room != _room
-                       else " 피우피우도 같은 방에 있다." if _piu_room else "")
-                    + " 방을 옮기거나 물건을 놓는 일은 혼자 있을 때 일어난다."
-                      " 물으면 지금 자리를 그대로 말하라. 지어내지 마라.")
-                u.identity.place = _room     # 기억에 '어디서'가 남게
-        except Exception:
-            place_ctx = ""
-        # ── 내부: Arcogit이 생각 (유형판별→트리→기억주입→답) ──
-        q = msg or "이 사진 보고 몰랑이답게 반응해줘"
         # 사진이면 answer_fn 대신 직접 vision 호출로 답 생성
         if photo:
             pb = base64.b64encode(photo.getvalue()).decode()
