@@ -336,6 +336,12 @@ def main(mode):
                             'where': _where(), 'type': type(e).__name__}
 
         if mode in ('nightly', 'all'):
+            try:    # 기억을 목록이 아니라 지도로 — 밤에 한 번 다시 그린다
+                import semantic_map as _smap
+                out['map'] = _smap.rebuild(store.sb)
+            except Exception as e:
+                out['map'] = {'error': str(e)[:120]}
+
             try:        # 낮에 못 다룬 것이 겹쳐 꿈이 된다 (사실이 되지는 않는다)
                 import dream as _dream
                 from molang_store import SupabaseIdentity
