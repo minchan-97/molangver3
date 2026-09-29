@@ -34,18 +34,49 @@ MIN_CLUSTER = 3         # 뭉치로 치는 최소 크기
 MAX_NODES = 1200
 
 
+# 지도에 들어오면 안 되는 것들.
+# 자료를 지우는 대신 **입구를 막는다** — 지도는 밤마다 다시 그려지므로
+# 입구만 손보면 며칠 안에 저절로 빠진다.
+_STOP_EN = {
+    "and", "the", "for", "to", "of", "in", "on", "at", "by", "or", "is",
+    "are", "was", "with", "from", "that", "this", "it", "as", "be", "an",
+    "you", "your", "we", "our", "they", "not", "but", "can", "will",
+    "how", "what", "when", "where", "who", "why", "all", "more", "new",
+    "com", "www", "http", "https", "html", "php", "net", "org", "kr",
+    "blog", "post", "page", "search", "click", "here", "home", "menu",
+    "login", "share", "view", "list", "info", "data", "site", "web",
+}
+_STOP_KO = {
+    "사용자", "것을", "것이", "것은", "것에", "그것", "이것", "저것",
+    "나무위키", "위키백", "백과사전", "블로그", "네이버", "다음", "구글",
+    "분류", "목록", "문서", "내용", "정보", "소개", "안내", "설명",
+    "관련", "대한", "위한", "통해", "따라", "때문", "경우", "정도",
+    "다운로드", "무료", "사이트", "홈페이지", "게시판", "댓글",
+}
+
+
 def _words(text: str) -> list:
     ws = TOKEN.findall(text or "")
+    out = []
     try:
         from organism.curiosity import _is_topic_like, strip_josa, canon_name
-        out = []
-        for w in ws:
-            w = canon_name(strip_josa(w))
-            if _is_topic_like(w):
-                out.append(w)
-        return out
+        ok = _is_topic_like
     except Exception:
-        return [w for w in ws if 2 <= len(w) <= 12]
+        strip_josa = canon_name = lambda x: x
+        ok = lambda x: 2 <= len(x) <= 12
+
+    for w in ws:
+        low = w.lower()
+        if low in _STOP_EN:
+            continue
+        # 영문은 이름이 아닌 한 지도에 넣지 않는다 (제목·주소 부스러기가 대부분)
+        if low.isascii() and (len(w) <= 3 or low.islower()):
+            continue
+        w = canon_name(strip_josa(w))
+        if w in _STOP_KO or not ok(w):
+            continue
+        out.append(w)
+    return out
 
 
 # ── 1단계: 가깝다만 쌓기 ─────────────────────────────────────
