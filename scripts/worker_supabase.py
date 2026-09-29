@@ -155,7 +155,17 @@ def main(mode):
                 from molang_store import SupabaseIdentity
                 from organism.curiosity import nudge_from_memory
                 _id = SupabaseIdentity(store.sb)
-                _rem = nudge_from_memory(state, list(_id.learned_facts))
+                # 지금 어디에 있고 무엇을 봤는지가 계기가 된다
+                try:
+                    import home as _hm, reminisce as _rm
+                    _hh = _hm.load(store.sb)
+                    _room = (_hh.get('where') or {}).get('molang') or ''
+                    _cue = _rm.cue_from(
+                        place=_room, room_words=_hm.ROOMS.get(_room, []),
+                        topic=(state.last_topic or ''))
+                except Exception:
+                    _cue = set()
+                _rem = nudge_from_memory(state, list(_id.learned_facts), cue=_cue)
                 if _rem:
                     print(f"  문득 떠오름 → 관심: {', '.join(_rem)}")
                 out['reminisce'] = _rem
