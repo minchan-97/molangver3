@@ -98,6 +98,9 @@ def settle(state, decay=0.985, floor=0.02):
             a, b = state.interests.get(base, 0.0), state.interests.pop(t)
             state.interests[base] = min(5.0, max(a, b) + 0.15 * min(a, b))
 
+    # 이미 크게 쌓인 일반어도 내려보낸다.
+    # 필터를 고쳐도 예전에 오른 값은 남아 검색 주제로 계속 뽑힌다
+    # ('거의'가 3.49 로 2위였다). 주제답지 않은 것은 값과 무관하게 버린다.
     dropped, faded = [], 0
     for t in list((state.interests or {}).keys()):
         # 띄어쓰기가 있어도 말투면 버린다 ('있어 파스타' 같은 붙은 조각)
@@ -207,4 +210,3 @@ def to_reflection_context(state, n=6) -> str:
         if c:
             lines.append("이어본 것: " + ", ".join("-".join(p) for p in c))
     return "\n".join(dict.fromkeys(lines))[:800]
-
