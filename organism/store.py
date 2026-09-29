@@ -58,6 +58,7 @@ class OrganismStore:
         s.dreams = row.get('dreams') or []
         s.moods = row.get('moods') or []
         s.outings = row.get('outings') or []
+        s.drive = float(row.get('drive') or 0.0)
 
         obs = self.sb.table('organism_observations') \
             .select('uid,topic,title,text,url,status,score,source_trust,'
@@ -118,6 +119,8 @@ class OrganismStore:
         # 매 회차 같은 기억이 떠오르고, 그 낱말만 관심에 쌓인다
         # (실제로 '바다사진'이 4.6까지 갔다).
         extra = {}
+        if getattr(s, 'drive', None) is not None:
+            extra['drive'] = float(s.drive)
         for key, cap in (('musings', 200), ('reminisced', 50),
                          ('dreams', 60), ('moods', 120), ('outings', 40)):
             v = getattr(s, key, None)
