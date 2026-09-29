@@ -42,7 +42,27 @@ TOKEN = re.compile(r"[가-힣A-Za-z]{2,}")
 
 
 # ── 낮에 쌓인 압력 ───────────────────────────────────────────
-def pressure(sb, identity) -> dict:
+def _drive_step(state, H: float, L: float) -> float:
+    """
+    충동은 한 회차의 값이 아니라 **쌓이는 양**이다.
+    (직접 만드신 freud_unconscious 의 step 을 그대로 쓴다.
+     alpha 만큼 엔트로피로 오르고, beta 만큼 소화로 빠진다)
+    """
+    try:
+        from freud_unconscious import FreudUnconscious
+        fu = FreudUnconscious(p0=float(getattr(state, "drive", 0.0) or 0.0),
+                              alpha=DRIVE_ALPHA, beta=DRIVE_BETA,
+                              threshold=0.85)
+        drive, _q = fu.step(H, L)
+    except Exception:
+        drive = max(0.0, min(1.0, float(getattr(state, "drive", 0.0) or 0.0)
+                             + DRIVE_ALPHA * H - DRIVE_BETA * L))
+    if state is not None:
+        state.drive = round(drive, 4)
+    return drive
+
+
+def pressure(sb, identity, state=None) -> dict:
     """
     미처리량 → 충동. 프로이트 모듈의 step() 과 같은 꼴이되,
     entropy 자리에 '아직 소화 못 한 것의 비율'을 넣는다.
@@ -65,8 +85,21 @@ def pressure(sb, identity) -> dict:
         pass
 
     raw = pend * 1.0 + rejected * 0.3 + unsure * 0.6
-    H = 1.0 - math.exp(-raw / 12.0)        # 많을수록 1에 가까워짐
-    return {"drive": round(H, 3), "pending": pend,
+    H = 1.0 - math.exp(-raw / 12.0)        # 소화 못 한 양 (엔트로피)
+
+    # 소화한 양 — 승인되어 근거가 된 것들이 충동을 뺀다
+    digested = 0
+    try:
+        r = (sb.table("organism_observations").select("id", count="exact")
+             .eq("status", "candidate").eq("fed", True).execute())
+        digested = r.count or 0
+    except Exception:
+        pass
+    L = 1.0 - math.exp(-digested / 30.0)
+
+    drive = _drive_step(state, H, L) if state is not None else H
+    return {"drive": round(drive, 3), "entropy": round(H, 3),
+            "digest": round(L, 3), "pending": pend,
             "rejected": rejected, "unsure": unsure}
 
 
@@ -151,6 +184,52 @@ def _drift(pieces: list[dict], identity) -> float:
         return 0.0
 
 
+def _linger(pieces: list[dict], identity, rng) -> str | None:
+    """
+    겹친 조각들 중 무엇이 깨어난 뒤까지 남나.
+
+    두 가지를 곱한다 (둘 다 로컬 계산).
+      얽힘  다른 조각들과 얼마나 이어져 있나 — 혼자 동떨어진 건 안 남는다
+      낯섦  이미 아는 것과 얼마나 다른가 — 익숙한 건 남을 이유가 없다
+    그래서 '여러 갈래에 걸쳐 있으면서 아직 내 것이 아닌' 낱말이 남는다.
+    """
+    cands = []
+    for p in pieces:
+        for w in TOKEN.findall(p.get("text") or ""):
+            cands.append(w)
+        if p.get("topic"):
+            cands.append(str(p["topic"]))
+    try:
+        from organism.curiosity import _is_topic_like, strip_josa, canon_name
+        cands = [canon_name(strip_josa(w)) for w in cands]
+        cands = [w for w in cands if _is_topic_like(w)]
+    except Exception:
+        cands = [w for w in cands if 2 <= len(w) <= 8]
+    cands = list(dict.fromkeys(cands))
+    if not cands:
+        return None
+
+    try:
+        import numpy as np
+        from organism.embedder import hashed_embedding as emb
+        V = np.array([emb(w, dim=64) for w in cands])
+        tangle = (V @ V.T).mean(axis=1)            # 얽힘
+
+        known = [f.get("text", "") for f in getattr(identity, "learned_facts", [])
+                 if (f.get("strength") or 0) >= 0.6][:40]
+        if known:
+            K = np.array([emb(t, dim=64) for t in known])
+            strange = 1.0 - (V @ K.T).max(axis=1)  # 낯섦
+        else:
+            strange = np.ones(len(cands))
+
+        score = tangle * (0.4 + 0.6 * strange)
+        score = score + rng.random() * 0.05        # 같은 게 계속 남지 않게
+        return cands[int(np.argmax(score))]
+    except Exception:
+        return rng.choice(cands)
+
+
 DREAM_SYSTEM = """너는 몰랑이(흰 토끼)가 꾼 꿈을 적는다.
 
 - 아래 조각들이 한 장면에 **겹쳐서** 나타난 꿈이다. 논리적으로 잇지 마라.
@@ -164,7 +243,7 @@ JSON 하나만: {"dream":"...", "feeling":"한 낱말", "lingering":"꿈에서 �
 
 def dream(sb, identity, state, api_key=None, log=print) -> dict:
     """한 밤의 꿈. 조건이 안 되면 안 꾼다."""
-    p = pressure(sb, identity)
+    p = pressure(sb, identity, state)
     if p["drive"] < DREAM_THRESHOLD:
         return {"slept": True, "dreamed": False,
                 "why": f"압력이 낮음({p['drive']})", **p}
@@ -180,7 +259,12 @@ def dream(sb, identity, state, api_key=None, log=print) -> dict:
         return {"slept": True, "dreamed": False,
                 "why": f"정체성에서 너무 멀어 깼다(에너지 {energy})"}
 
-    text = feeling = lingering = None
+    # ── 무엇이 남을까: **로컬이 정한다** ──
+    # 예전에는 LLM 이 쓴 장면에서 lingering 을 골랐다. 그러면 꿈에서 나온
+    # 관심의 출처가 바깥 모델이 된다. 여기서는 겹친 조각들 중
+    # '가장 얽혀 있고 가장 낯선' 것을 로컬 계산으로 고른다.
+    lingering = _linger(pieces, identity, rng)
+    text = feeling = None
     if api_key:
         try:
             import json
@@ -194,7 +278,7 @@ def dream(sb, identity, state, api_key=None, log=print) -> dict:
                           {"role": "user", "content": body}])
             d = json.loads(r.choices[0].message.content)
             text, feeling = d.get("dream"), d.get("feeling")
-            lingering = d.get("lingering")
+            # lingering 은 로컬이 정한 것을 쓴다 (LLM 값은 버린다)
         except Exception as e:
             log(f"  꿈 적기 실패: {e}")
     if not text:                       # LLM 없이도 꿈은 꾼다 (조각만 남는다)
