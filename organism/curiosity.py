@@ -223,6 +223,11 @@ def nudge_from_memory(state, facts, weight=0.15, n=2, cue=None):
         bumped.append(topic)
     if got:
         reminisce.remember_used(state, [f.get("id") for f in got])
+    # 계기로 떠오른 것인지 함께 돌려준다 (어디서 떠올랐는지 로그에 남게)
+    by_cue = [f for f in got if f.get("_by_cue")]
+    if by_cue:
+        return {"words": bumped, "by_cue": True,
+                "from": [f.get("text", "")[:30] for f in by_cue]}
     return bumped
 
 
