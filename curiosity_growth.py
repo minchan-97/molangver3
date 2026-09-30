@@ -74,10 +74,24 @@ def feed_tree_memory(sb, registry, limit=20, embed_fn=None, classify_fn=None,
     반환: {'fed': n, 'trees': [...]}
     """
     try:
-        rows = (sb.table("organism_observations")
-                .select("id,topic,title,text,url,status,fed")
-                .eq("status", "candidate")
-                .order("id", desc=True).limit(limit).execute().data) or []
+        # **아직 안 먹인 것만** 가져온다.
+        # 예전에는 최신 20건을 가져와 그중 안 먹인 것을 골랐다. 그러면
+        # 앞쪽 20건이 다 먹은 것일 때 뒤에 남은 미먹인 관측을 영영 못 본다
+        # ("가져온 20건 중 이미먹임 20" 이 그 상태였다).
+        q = (sb.table("organism_observations")
+             .select("id,topic,title,text,url,status,fed")
+             .eq("status", "candidate"))
+        try:
+            rows = (q.or_("fed.is.null,fed.eq.false")
+                    .order("id", desc=True).limit(limit).execute().data) or []
+        except Exception:
+            # or_ 를 못 쓰는 판이면 예전 방식으로 (더 넉넉히 가져온다)
+            rows = (sb.table("organism_observations")
+                    .select("id,topic,title,text,url,status,fed")
+                    .eq("status", "candidate")
+                    .order("id", desc=True).limit(limit * 10)
+                    .execute().data) or []
+            rows = [r for r in rows if not r.get("fed")][:limit]
     except Exception as e:
         return {"fed": 0, "error": str(e)}
 
