@@ -137,8 +137,20 @@ def to_topic(fact: dict) -> str | None:
     words = [canon_name(strip_josa(w)) for w in TOKEN.findall(fact.get("text") or "")]
     # '들어보려고' 같은 말끝이 회상에서 새어 나가 관심이 됐다.
     # 주제 검사를 똑같이 거치게 한다.
-    cand = [w for w in words
-            if _is_topic_like(w) and w not in ("사용자",) and len(w) >= 2]
+    # 영문 조각은 회상 주제로 쓰지 않는다.
+    # 곡 제목에서 'world' 와 'World' 가 따로 올라온 일이 있었다.
+    seen = set()
+    cand = []
+    for w in words:
+        if not _is_topic_like(w) or w in ("사용자",) or len(w) < 2:
+            continue
+        if w.isascii():
+            continue
+        key = w.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        cand.append(w)
     if not cand:
         return None
     # 가장 긴 것이 아니라, 가장 '이름다운' 것을 고른다 (긴 활용형 배제)
