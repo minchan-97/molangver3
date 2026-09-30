@@ -33,7 +33,8 @@ curiosity_growth.py — 호기심이 '아는 것'만 늘리지 않고 '판단하
 from __future__ import annotations
 import os
 
-MEM_TO_DEEPEN = 8          # 트리 기억이 이만큼 쌓이면 단계 하나 더
+MEM_TO_DEEPEN = 8
+MEM_STEP_TO_DEEPEN = 5   # 다시 깊어지려면 근거가 이만큼 더 쌓여야          # 트리 기억이 이만큼 쌓이면 단계 하나 더
 SAME_PATH_RUNS = 5         # 최근 경로가 이만큼 연속 같으면 나눌 여지가 있다
 MAX_DEPTH_ADD = 3          # 한 트리에 이 이상은 안 깊어진다
 
@@ -150,6 +151,15 @@ def deepen(registry, log=print):
         added = sum(1 for n in t.nodes if str(n).startswith("grown_"))
         if added >= MAX_DEPTH_ADD:
             continue
+
+        # **새 근거 없이 또 깊어지지 않는다.**
+        # 예전에는 길만 같으면 회차마다 단계를 붙였다. inquiry 가 기억 9건
+        # 그대로인데 두 회차 연속 깊어진 게 그 때문이다.
+        # 깊어지는 건 '새로 알게 된 것이 쌓였을 때' 일어나야 한다.
+        mem_now = len(getattr(t, "memory", []))
+        last_mem = getattr(t, "_grown_at_mem", None)
+        if last_mem is not None and mem_now < last_mem + MEM_STEP_TO_DEEPEN:
+            continue
         hist = [tuple(r.path) for r in getattr(t, "history", [])[-SAME_PATH_RUNS:]]
         if len(hist) < SAME_PATH_RUNS or len(set(hist)) != 1:
             continue          # 길이 갈리고 있으면 아직 나눌 필요 없다
@@ -186,6 +196,7 @@ def deepen(registry, log=print):
             t.add_branch(before, nid, prob=0.5)
             t.add_branch(nid, last, prob=1.0)
             t._normalize(before)
+            t._grown_at_mem = mem_now     # 다음 성장은 근거가 더 쌓인 뒤에
             grown.append(tid)
             log(f"  사고 단계 추가: {tid} (기억 {len(t.memory)}건)")
         except Exception:
