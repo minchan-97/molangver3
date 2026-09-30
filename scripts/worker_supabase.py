@@ -246,7 +246,8 @@ def main(mode):
                         store.sb, _mol, _piu, _seen,
                         os.environ.get('OPENAI_API_KEY'),
                         place=_where.get('molang'),
-                        same_room=bool(_where.get('same_room')))
+                        same_room=bool(_where.get('same_room')),
+                        state=state)
                     # 2) 관심이 서로 물든다
                     _bleed = piupiu.bleed_interests(state, {_ptopic: 1.0})
                     out['piupiu'] = {'topic': _ptopic, 'bleed': _bleed,
