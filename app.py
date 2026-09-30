@@ -767,6 +767,14 @@ if msg or photo:
         except Exception:
             map_ctx = ""
 
+        # 요즘 알고 싶은 것 — 승인된 하위 목적
+        purpose_ctx = ""
+        try:
+            import purpose_drive as _pd
+            purpose_ctx = _pd.chat_context(_pd.load(sb))
+        except Exception:
+            purpose_ctx = ""
+
         # 모르는 것을 지어내지 못하게 (말하기 전 단계)
         import groundcheck as _gc
         guard_ctx = _gc.guard_prompt(q if not photo else "", u.identity) \
@@ -778,7 +786,7 @@ if msg or photo:
             pb = base64.b64encode(photo.getvalue()).decode()
             try:
                 r = client.chat.completions.create(model="gpt-4o",
-                    messages=[{"role":"system","content":u.identity.to_system_prompt(question=q)+"\n"+self_ctx+"\n"+place_ctx+"\n"+time_ctx+"\n"+guard_ctx},
+                    messages=[{"role":"system","content":u.identity.to_system_prompt(question=q)+"\n"+self_ctx+"\n"+place_ctx+"\n"+time_ctx+"\n"+purpose_ctx+"\n"+guard_ctx},
                         {"role":"user","content":[
                             {"type":"text","text":"이 사진 보고 몰랑이답게 반응해줘!"},
                             {"type":"image_url","image_url":{"url":f"data:{photo.type};base64,{pb}"}}]}],
@@ -789,6 +797,7 @@ if msg or photo:
         else:
             bg = self_ctx + ((" " + place_ctx) if place_ctx else "") \
                  + ((" " + time_ctx) if time_ctx else "") \
+                 + (("\n" + purpose_ctx) if purpose_ctx else "") \
                  + (("\n" + map_ctx) if map_ctx else "") \
                  + (("\n" + guard_ctx) if guard_ctx else "")
             # 최근 대화를 맥락으로 — 이게 없으면 몰랑이가 자기가 방금 한 말도 모른다
