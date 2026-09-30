@@ -218,6 +218,16 @@ def _linger(pieces: list[dict], identity, rng) -> str | None:
             # 활용형이 꿈에서 남아 관심으로 올라간다.
             if not _is_topic_like(w) or w in TALK_WORDS:
                 continue
+            # 영문 조각과 사이트 껍데기는 꿈에서도 남기지 않는다
+            # ('English', 'Dictionary', 'from' 이 관심으로 올라간 일이 있었다)
+            if w.isascii():
+                continue
+            try:
+                import reader
+                if reader.is_medium(w):   # '사전', '차트' 같은 매체 낱말
+                    continue
+            except Exception:
+                pass
             if len(w) < 2 or w.endswith(("긴", "는", "던", "들")):
                 continue
             cleaned.append(w)
