@@ -75,6 +75,12 @@ def _words(text: str) -> list:
         w = canon_name(strip_josa(w))
         if w in _STOP_KO or not ok(w):
             continue
+        try:
+            import reader
+            if reader.is_medium(w):
+                continue
+        except Exception:
+            pass
         out.append(w)
     return out
 
