@@ -68,8 +68,20 @@ def ingest_result(state, topic, r, snapshot, new_items):
 
 def curiosity_cycle(state, store, deep=False):
     prompt = store.identity_prompt()
-    topic = choose_topic(state, random.Random(time.time_ns()))
-    query = expand_query_with_openai(topic, prompt) if deep else topic
+    # 승인된 하위 목적이 주제 고르기와 검색어에 실린다
+    try:
+        import purpose_drive
+        subs = purpose_drive.load(store.sb)
+    except Exception:
+        subs = []
+    topic = choose_topic(state, random.Random(time.time_ns()), subs=subs)
+    pctx = ""
+    try:
+        pctx = purpose_drive.query_context(subs, topic) if subs else ""
+    except Exception:
+        pass
+    query = (expand_query_with_openai(topic, prompt, purpose_ctx=pctx)
+             if deep else topic)
 
     # 배치 스냅샷 — 이 사이클 내내 같은 값을 쓴다
     snapshot = {'novelty': state.novelty(topic),
@@ -274,6 +286,11 @@ def main(mode):
             if _gone:
                 print(f"  안 쓰인 사고유형 정리: {', '.join(_gone)}")
             out['withered'] = _gone
+            try:
+                import purpose_drive as _pd
+                _subs_now = _pd.load(store.sb)
+            except Exception:
+                _subs_now = []
             out['growth'] = curiosity_growth.run(
                 store.sb, _reg, state=state,
                 api_key=os.environ.get('OPENAI_API_KEY'), log=print)
