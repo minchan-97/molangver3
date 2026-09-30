@@ -81,19 +81,30 @@ def feed_tree_memory(sb, registry, limit=20, embed_fn=None, classify_fn=None,
     except Exception as e:
         return {"fed": 0, "error": str(e)}
 
+    # 왜 안 먹여졌는지 남긴다. 예전에는 조용히 건너뛰어서
+    # fed: 0 만 보이고 원인을 알 수 없었다.
     fed, touched = 0, set()
+    skip = {"already_fed": 0, "no_tree": 0, "refused": 0}
+    if not registry.trees:
+        return {"fed": 0, "error": "트리가 하나도 없음 (registry 복원 실패?)",
+                "rows": len(rows)}
+
     for r in rows:
         if r.get("fed"):
+            skip["already_fed"] += 1
             continue
         topic = r.get("topic") or ""
         tid, tree = _topic_tree(registry, topic, embed_fn, classify_fn)
         if tree is None:
+            skip["no_tree"] += 1
             continue
         body = f"[{topic}] {(r.get('title') or '')} — {(r.get('text') or '')[:300]}"
         try:
             ok = tree.remember(body, trust=0.6, context=topic)
         except Exception:
             ok = False
+        if not ok:
+            skip["refused"] += 1
         if ok:
             fed += 1
             touched.add(tid)
@@ -104,7 +115,12 @@ def feed_tree_memory(sb, registry, limit=20, embed_fn=None, classify_fn=None,
                 pass
     if fed:
         log(f"  근거 → 사고 기억 {fed}건 ({', '.join(sorted(touched))})")
-    return {"fed": fed, "trees": sorted(touched)}
+    elif rows:
+        log(f"  근거를 못 먹임: 가져온 {len(rows)}건 중 "
+            f"이미먹임 {skip['already_fed']} · 트리없음 {skip['no_tree']} "
+            f"· 거절 {skip['refused']}")
+    return {"fed": fed, "trees": sorted(touched), "rows": len(rows),
+            "skip": skip, "trees_loaded": len(registry.trees)}
 
 
 def deepen(registry, log=print):
