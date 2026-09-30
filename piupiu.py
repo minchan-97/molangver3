@@ -42,6 +42,36 @@ PERSONA = """[나는 누구인가] 피우피우 — 노란 병아리. 몰랑이�
 SEEDS = ["빵 만들기", "씨앗과 싹", "둥지", "곤충의 하루", "물의 순환",
          "색을 내는 재료", "작은 기계", "발효", "종이접기", "새의 노래"]
 
+def _knows(ident, topic: str, state=None, limit=4) -> list:
+    """
+    이 주제에 대해 이미 아는 것.
+    없으면 대화가 매번 초면이 된다 — 노래를 수십 번 얘기해 놓고
+    "오늘 나는 '노래'라는 걸 발견했어!" 라고 말하던 이유가 이것이었다.
+    """
+    out = []
+    try:
+        import re
+        key = set(re.findall(r"[가-힣A-Za-z]{2,}", topic or ""))
+        stems = {w[:2] for w in key if len(w) >= 2}
+        for f in getattr(ident, "learned_facts", []):
+            t = f.get("text", "")
+            ws = set(re.findall(r"[가-힣A-Za-z]{2,}", t))
+            if key & ws or stems & {w[:2] for w in ws}:
+                out.append(t[:70])
+            if len(out) >= limit:
+                break
+    except Exception:
+        pass
+    # 관심 지형에서도 (얼마나 마음이 가 있는지)
+    try:
+        w = float((getattr(state, "interests", {}) or {}).get(topic, 0))
+        if w >= 1.0:
+            out.append(f"(이 주제에 관심이 큰 편: {w:.1f})")
+    except Exception:
+        pass
+    return out
+
+
 TALK_SYSTEM = """몰랑이(흰 토끼)와 피우피우(노란 병아리)가 나누는 짧은 대화를 쓴다.
 
 - 아래 '오늘 본 것'을 두고 이야기한다. 설명하지 말고 **주고받게** 하라.
@@ -49,6 +79,8 @@ TALK_SYSTEM = """몰랑이(흰 토끼)와 피우피우(노란 병아리)가 나�
 - 피우피우: 짧고 빠르다. 겁이 조금 많고, 작고 구체적인 쪽에 끌린다.
   몰랑이를 아주 좋아해서 자주 감탄한다.
 - 각자 한 번씩만. 두 문장 이내.
+- **'이미 아는 것'이 주어지면 처음 보는 척하지 마라.** 아는 것에서 이어 말한다.
+  ("오늘 노래라는 걸 발견했어!" 같은 말은, 이미 노래를 아는데 하면 거짓이다)
 - 서로에 대해 알게 된 것이 있으면 그것도 한 줄.
 
 JSON 하나만:
@@ -84,13 +116,18 @@ def pick_topic(state, rng=None) -> str:
 
 
 def converse(sb, mol_ident, piu_ident, seen: dict, api_key=None,
-             log=print, place: str = "", same_room: bool = False) -> dict:
+             log=print, place: str = "", same_room: bool = False,
+             state=None) -> dict:
     """
     오늘 본 것을 두고 둘이 한 번 주고받는다.
     seen: {"topic":…, "title":…, "text":…, "url":…}
     """
     if not seen:
         return {"skip": "볼 것이 없음"}
+
+    # 각자 이 주제에 대해 아는 것 — 매번 초면인 대화가 되지 않게
+    mol_knows = _knows(mol_ident, seen.get("topic", ""), state)
+    piu_knows = _knows(piu_ident, seen.get("topic", ""))
 
     talk = None
     if api_key:
@@ -106,6 +143,12 @@ def converse(sb, mol_ident, piu_ident, seen: dict, api_key=None,
                            f"오늘 본 것 [{seen.get('topic')}] "
                            f"{(seen.get('title') or '')[:80]}\n"
                            f"{(seen.get('text') or '')[:300]}\n"
+                           + (("[몰랑이가 이미 아는 것]\n- "
+                               + "\n- ".join(mol_knows) + "\n")
+                              if mol_knows else "")
+                           + (("[피우피우가 이미 아는 것]\n- "
+                               + "\n- ".join(piu_knows) + "\n")
+                              if piu_knows else "")
                            + (f"둘은 지금 {place}에 함께 있다. 말이 길게 오간다."
                               if same_room else
                               "둘은 다른 방에 있다. 짧게 주고받는다.")}])
@@ -113,7 +156,8 @@ def converse(sb, mol_ident, piu_ident, seen: dict, api_key=None,
         except Exception as e:
             log(f"  피우피우 대화 실패: {e}")
     if not talk:
-        talk = {"molang": f"{seen.get('topic')} 이야기를 봤어.",
+        talk = {"molang": (f"{seen.get('topic')} 이야기를 또 봤어."
+                           if mol_knows else f"{seen.get('topic')} 이야기를 봤어."),
                 "piupiu": "삐약! 그거 재밌겠다!",
                 "molang_learns": "", "piupiu_learns": "", "topic_for_piupiu": ""}
 
