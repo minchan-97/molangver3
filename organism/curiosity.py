@@ -293,9 +293,24 @@ def brave_search(query, api_key, count=5):
         'Accept': 'application/json', 'X-Subscription-Token': api_key})
     with urllib.request.urlopen(req, timeout=20) as r:
         data = json.loads(r.read().decode())
-    return [{'title': x.get('title', ''), 'text': x.get('description', ''),
-             'url': x.get('url', '')}
-            for x in data.get('web', {}).get('results', [])]
+    items = [{'title': x.get('title', ''), 'text': x.get('description', ''),
+              'url': x.get('url', '')}
+             for x in data.get('web', {}).get('results', [])]
+
+    # **본문을 읽는다.** 제목과 한 줄 요약만 담으면, 사전을 찾아도
+    # 뜻풀이가 아니라 'WordReference', 'Dictionary' 같은 사이트 껍데기가
+    # 관측으로 남는다 (실제로 그것들이 꿈에 나오고 관심이 되었다).
+    try:
+        import reader
+        topic = query or ''
+        for it in items[:3]:            # 앞의 셋만 — 시간과 예의를 지킨다
+            got = reader.read(it.get('url', ''), topic, it.get('text', ''))
+            if got['text']:
+                it['text'] = got['text']
+                it['read'] = got['source']
+    except Exception:
+        pass
+    return items
 
 
 def expand_query_with_openai(topic, identity_prompt="", model=None,
