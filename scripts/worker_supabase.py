@@ -258,7 +258,10 @@ def main(mode):
             from tree_registry import TreeRegistry
             import registry_store
             _reg = TreeRegistry()
-            registry_store.load_into(store.sb, _reg)
+            _loaded = registry_store.load_into(store.sb, _reg)
+            if _loaded == 0:
+                print("  ⚠️ 사고 트리를 하나도 못 불러왔습니다 "
+                      "(molang_registry 확인 필요)")
             _gone = _reg.wither()
             if _gone:
                 print(f"  안 쓰인 사고유형 정리: {', '.join(_gone)}")
@@ -268,7 +271,9 @@ def main(mode):
                 api_key=os.environ.get('OPENAI_API_KEY'), log=print)
             if out['growth'].get('deepened') or out['growth'].get('new_type') \
                     or out['growth'].get('memory', {}).get('fed'):
-                registry_store.save(store.sb, _reg)
+                _rs = registry_store.save(store.sb, _reg)
+                if not _rs.get("ok"):
+                    print(f"  ⚠️ 트리 저장 실패: {_rs.get('error')}")
         except Exception as e:
             out['growth'] = {'error': str(e)[:200],
                              'where': _where(), 'type': type(e).__name__}
