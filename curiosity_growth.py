@@ -69,7 +69,7 @@ def _topic_tree(registry, topic: str, embed_fn=None, classify_fn=None):
 
 
 def feed_tree_memory(sb, registry, limit=20, embed_fn=None, classify_fn=None,
-                     log=print):
+                     log=print, subs=None):
     """
     1) 승인된 관측(status='candidate')을 주제에 맞는 트리의 기억으로.
     반환: {'fed': n, 'trees': [...]}
@@ -114,8 +114,17 @@ def feed_tree_memory(sb, registry, limit=20, embed_fn=None, classify_fn=None,
             skip["no_tree"] += 1
             continue
         body = f"[{topic}] {(r.get('title') or '')} — {(r.get('text') or '')[:300]}"
+        # 목적에 걸린 분야는 근거를 더 무겁게 쌓는다 —
+        # 그래야 그쪽 사고가 먼저 깊어진다
+        trust = 0.6
+        if subs:
+            try:
+                import purpose_drive
+                trust = min(0.95, 0.6 * purpose_drive.feed_weight(subs, topic))
+            except Exception:
+                pass
         try:
-            ok = tree.remember(body, trust=0.6, context=topic)
+            ok = tree.remember(body, trust=trust, context=topic)
         except Exception:
             ok = False
         if not ok:
@@ -138,7 +147,7 @@ def feed_tree_memory(sb, registry, limit=20, embed_fn=None, classify_fn=None,
             "skip": skip, "trees_loaded": len(registry.trees)}
 
 
-def deepen(registry, log=print):
+def deepen(registry, log=print, subs=None):
     """
     2) 근거가 쌓였는데 늘 같은 길만 지나는 트리에 판단 단계를 하나 더 붙인다.
     반환: 깊어진 트리 목록
@@ -146,7 +155,14 @@ def deepen(registry, log=print):
     from thought_structure import JudgmentNode
     grown = []
     for tid, t in list(registry.trees.items()):
-        if len(getattr(t, "memory", [])) < MEM_TO_DEEPEN:
+        need = MEM_TO_DEEPEN
+        try:
+            if subs:
+                import purpose_drive
+                need = purpose_drive.deepen_threshold(subs, tid, MEM_TO_DEEPEN)
+        except Exception:
+            pass
+        if len(getattr(t, "memory", [])) < need:
             continue
         added = sum(1 for n in t.nodes if str(n).startswith("grown_"))
         if added >= MAX_DEPTH_ADD:
@@ -235,12 +251,13 @@ def merge_candidates(registry, log=print):
 
 
 def run(sb, registry, state=None, api_key=None, embed_fn=None, classify_fn=None,
-        log=print):
+        log=print, subs=None):
     """세 갈래를 한 번에. 워커가 호출한다."""
     out = {}
     out["memory"] = feed_tree_memory(sb, registry, embed_fn=embed_fn,
-                                     classify_fn=classify_fn, log=log)
-    out["deepened"] = deepen(registry, log=log)
+                                     classify_fn=classify_fn, log=log,
+                                     subs=subs)
+    out["deepened"] = deepen(registry, log=log, subs=subs)
     # 구조 판정기는 결과로 배운다 (쓰인 유형 = 좋은 설계)
     try:
         import logic_check
