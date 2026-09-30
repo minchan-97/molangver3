@@ -166,9 +166,16 @@ def main(mode):
                 except Exception:
                     _cue = set()
                 _rem = nudge_from_memory(state, list(_id.learned_facts), cue=_cue)
-                if _rem:
+                if isinstance(_rem, dict):       # 계기로 떠오른 경우
+                    print(f"  {_room}에서 떠오름 → 관심: "
+                          f"{', '.join(_rem['words'])}"
+                          + (f"  ({_rem['from'][0]}…)" if _rem.get('from') else ''))
+                    out['reminisce'] = {**_rem, 'place': _room}
+                elif _rem:
                     print(f"  문득 떠오름 → 관심: {', '.join(_rem)}")
-                out['reminisce'] = _rem
+                    out['reminisce'] = _rem
+                else:
+                    out['reminisce'] = []
             except Exception as e:
                 out['reminisce'] = {'error': str(e)[:100]}
             out['musing'] = musing.think_many(
