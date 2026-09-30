@@ -155,7 +155,7 @@ def infer_topics(text, n=5):
                                  key=lambda kv: (-kv[1], kv[0]))[:n]]
 
 
-def choose_topic(state, rng=None):
+def choose_topic(state, rng=None, subs=None):
     """
     주제 고르기. 세 갈래를 섞는다.
 
@@ -187,14 +187,34 @@ def choose_topic(state, rng=None):
             pool = pool + seen
         return rng.choice(pool)
 
-    # 2) 관심사 — 목적 친화도를 곱해 '몰랑이다운' 쪽에 무게를 둔다
-    ranked = sorted(
-        (t for t in state.interests if ok(t)),
-        key=lambda t: state.interests[t] * state.novelty(t) * aff(t),
-        reverse=True)
+    # 2) 관심사 — 핵심 목적 친화도 × **승인된 하위 목적** 가중치
+    #    하위 목적은 지금까지 저장만 되고 아무 데서도 읽히지 않았다.
+    #    승인한 목적이 행동을 바꾸지 않으면 그건 목적이 아니라 메모다.
+    scores = {t: state.interests[t] * state.novelty(t) * aff(t)
+              for t in state.interests if ok(t)}
+    if subs:
+        try:
+            import purpose_drive
+            scores = purpose_drive.weight_topics(subs, scores)
+        except Exception:
+            pass
+    ranked = sorted(scores, key=lambda t: -scores[t])
     if not ranked:
         return rng.choice(SEEDS)
-    return rng.choice(ranked[:max(1, min(5, len(ranked)))])
+
+    # 상위에서 **점수에 비례해** 뽑는다.
+    # 예전에는 상위 5개 중 무작위였다. 그러면 목적 가중치를 실어도
+    # 5개 안에만 들면 똑같은 확률이라 아무 차이가 없다.
+    top = ranked[:max(1, min(8, len(ranked)))]
+    weights = [max(1e-6, scores[t]) for t in top]
+    total = sum(weights)
+    pick = rng.random() * total
+    acc = 0.0
+    for t, w in zip(top, weights):
+        acc += w
+        if acc >= pick:
+            return t
+    return top[-1]
 
 
 def nudge_from_memory(state, facts, weight=0.15, n=2, cue=None):
@@ -278,7 +298,8 @@ def brave_search(query, api_key, count=5):
             for x in data.get('web', {}).get('results', [])]
 
 
-def expand_query_with_openai(topic, identity_prompt="", model=None):
+def expand_query_with_openai(topic, identity_prompt="", model=None,
+                            purpose_ctx=""):
     # 이름은 넓히지 않는다. '한로로'를 풀어 쓰면 다른 것이 된다.
     if topic in NAME_CANON or (len(topic) <= 4 and _looks_proper(topic)):
         return topic
@@ -293,6 +314,8 @@ def expand_query_with_openai(topic, identity_prompt="", model=None):
             why = purpose.query_context()
         except Exception:
             why = ""
+        if purpose_ctx:
+            identity_prompt = (identity_prompt or "") + "\n" + purpose_ctx
         msg = ("Return ONLY the search query itself — no greeting, no name, "
                "no quotes, no explanation. 8 words max. "
                "You are choosing one curiosity search direction for a "
