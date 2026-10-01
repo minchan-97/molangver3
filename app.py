@@ -870,8 +870,10 @@ if msg or photo:
                 pass
             _desc = _tv.describe(_t)
             _ph = _tv.recall_photo(_t, cue=q)
+            # += 여야 한다. = 로 덮어쓰면 바로 위에서 만든 '여행 중' 맥락이
+            # 지워져서, 섬에 있으면서 집에 있는 것처럼 말하게 된다.
             if _desc:
-                travel_ctx = _desc + "\n"
+                travel_ctx += _desc + "\n"
             if _ph:
                 travel_ctx += ("[떠오르는 사진] " + _tv.photo_line(_ph)
                                + " (물어보면 이 이야기를 하되, 없는 건 "
