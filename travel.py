@@ -183,9 +183,21 @@ def go(sb, tv: dict, state, identity=None, piu_identity=None,
     except Exception as e:
         return {"went": None, "why": f"출발 실패: {str(e)[:60]}"}
 
-    # 공항은 집에서 가장 먼 자리에 있다 — 떠난다는 느낌이 거기서 온다
-    log("  🛫 집에서 가장 먼 공항까지 가서 비행기를 탔다")
-    return {"went": where, "days": trip["days"], "starting": True}
+    # 공항은 집 격자 바깥, 가장 먼 자리에 있다
+    route = {"through": "창가", "total": 12.0}
+    try:
+        import home as _home
+        h = _home.load(sb)
+        here = (h.get("where") or {}).get("molang") or "창가"
+        route = _home.airport_from(here)
+        route["from"] = here
+        log(f"  🛫 {here} → {route['through']} → 공항({route['total']}만큼 멀리) "
+            f"→ 비행기")
+    except Exception:
+        log("  🛫 공항까지 가서 비행기를 탔다")
+    trip["route"] = route
+    return {"went": where, "days": trip["days"], "starting": True,
+            "route": route}
 
 
 # ── 돌아온 뒤 ───────────────────────────────────────────────
