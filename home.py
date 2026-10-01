@@ -148,6 +148,24 @@ def distance(a: str, b: str) -> float:
     return layout()["dist"].get(a, {}).get(b, 1.0)
 
 
+def airport_from(room: str = None) -> dict:
+    """
+    공항은 집 격자 **바깥**, 가장 먼 자리에 있다.
+    집에서 가장 먼 방을 지나 거기서 더 가야 한다 — 그래서 '떠난다'가 된다.
+    """
+    L = layout()
+    names = list(ROOMS)
+    far_room, far = names[0], -1.0
+    base = room or "창가"
+    for n in names:
+        d = L["dist"].get(base, {}).get(n, 0.0)
+        if d > far:
+            far_room, far = n, d
+    return {"through": far_room, "home_dist": far,
+            "extra": 12.0,          # 집 격자를 벗어나는 거리
+            "total": round(far + 12.0, 1)}
+
+
 def interest_vector(interests: dict, top=8):
     """지금 관심을 하나의 방향으로."""
     items = sorted((interests or {}).items(), key=lambda kv: -kv[1])[:top]
