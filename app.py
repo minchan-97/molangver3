@@ -254,6 +254,52 @@ with st.sidebar:
     if _bump:
         st.caption(f"🌱 요즘 관심: {', '.join(_bump[:5])}")
 
+    # ✈️ 여행 — 사진과 기념품
+    try:
+        import travel as _tvm
+        _tt = _tvm.load(sb)
+        _trips = _tt.get("trips") or []
+        _long = _tt.get("longing") or {}
+        _now = None
+        try:
+            import island as _islm
+            _now = _islm.where_now(_tt)
+        except Exception:
+            pass
+        if _trips or _long or (_now and _now.get("away")):
+            st.markdown("---")
+            st.markdown("### ✈️ 여행")
+            if _now and _now.get("away"):
+                st.caption(f"🏝️ **지금 {_now['place']}에 있어요** "
+                           f"· 남은 {_now['left']}일 · 지침 {_now['tired']}")
+                if _now.get("seen"):
+                    st.caption("　다녀온 곳: " + " → ".join(_now["seen"]))
+                _lt = _now.get("last_talk")
+                if _lt:
+                    st.caption(f"　🐰 {(_lt.get('molang') or '')[:52]}")
+                    st.caption(f"　🐤 {(_lt.get('piupiu') or '')[:52]}")
+            if _trips:
+                _last = _trips[-1]
+                st.caption(f"{len(_trips)}번 다녀옴 · 마지막은 **{_last['where']}**"
+                           f" ({_last.get('by','')})")
+            _want = sorted(_long.items(), key=lambda kv: -kv[1])[:2]
+            for _n, _v in _want:
+                if _v <= 0:
+                    continue
+                _bar = "█" * max(1, int(10 * min(1.0, _v / 1.0)))
+                st.caption(f"　{_n} 가고 싶음 {_bar} {_v:.2f}")
+            _photos = (_tt.get("photos") or [])[::-1]
+            if _photos:
+                with st.expander(f"📷 사진 {len(_photos)}장"):
+                    for _p in _photos[:8]:
+                        st.caption("　" + _tvm.photo_line(_p))
+            _souv = (_tt.get("souvenirs") or [])[::-1]
+            if _souv:
+                st.caption("🎁 " + " · ".join(
+                    f"{s['name']}({s['from']})" for s in _souv[:4]))
+    except Exception:
+        pass
+
     # 🏠 둘의 집과 바깥 — 어디에 있고, 무엇을 놓아뒀고, 무엇이 바뀌었나
     try:
         import home as _home
@@ -767,6 +813,27 @@ if msg or photo:
         except Exception:
             map_ctx = ""
 
+        # 여행 — 다녀온 곳, 그리고 사진 한 장
+        travel_ctx = ""
+        try:
+            import travel as _tv
+            _t = _tv.load(sb)
+            try:
+                import island as _isl
+                travel_ctx += _isl.context_line(_t)
+            except Exception:
+                pass
+            _desc = _tv.describe(_t)
+            _ph = _tv.recall_photo(_t, cue=q)
+            if _desc:
+                travel_ctx = _desc + "\n"
+            if _ph:
+                travel_ctx += ("[떠오르는 사진] " + _tv.photo_line(_ph)
+                               + " (물어보면 이 이야기를 하되, 없는 건 "
+                                 "지어내지 마라)\n")
+        except Exception:
+            travel_ctx = ""
+
         # 요즘 알고 싶은 것 — 승인된 하위 목적
         purpose_ctx = ""
         try:
@@ -786,7 +853,7 @@ if msg or photo:
             pb = base64.b64encode(photo.getvalue()).decode()
             try:
                 r = client.chat.completions.create(model="gpt-4o",
-                    messages=[{"role":"system","content":u.identity.to_system_prompt(question=q)+"\n"+self_ctx+"\n"+place_ctx+"\n"+time_ctx+"\n"+purpose_ctx+"\n"+guard_ctx},
+                    messages=[{"role":"system","content":u.identity.to_system_prompt(question=q)+"\n"+self_ctx+"\n"+place_ctx+"\n"+time_ctx+"\n"+travel_ctx+"\n"+purpose_ctx+"\n"+guard_ctx},
                         {"role":"user","content":[
                             {"type":"text","text":"이 사진 보고 몰랑이답게 반응해줘!"},
                             {"type":"image_url","image_url":{"url":f"data:{photo.type};base64,{pb}"}}]}],
@@ -797,6 +864,7 @@ if msg or photo:
         else:
             bg = self_ctx + ((" " + place_ctx) if place_ctx else "") \
                  + ((" " + time_ctx) if time_ctx else "") \
+                 + (("\n" + travel_ctx) if travel_ctx else "") \
                  + (("\n" + purpose_ctx) if purpose_ctx else "") \
                  + (("\n" + map_ctx) if map_ctx else "") \
                  + (("\n" + guard_ctx) if guard_ctx else "")
