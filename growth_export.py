@@ -102,6 +102,11 @@ def collect(sb, registry=None, state=None, identity=None) -> dict:
                 }
         except Exception as e:
             out["map"] = {"_error": str(e)[:80]}
+        try:        # 여행·사진·기념품
+            import travel as _tvx
+            out["travel"] = _tvx.load(sb)
+        except Exception as e:
+            out["travel"] = {"_error": str(e)[:60]}
         out["dreams"] = _rows(sb, "molang_dreams", limit=100)
         out["peer_talks"] = _rows(sb, "molang_peer_talks", limit=100)
         out["purposes"] = _rows(sb, "molang_purposes", limit=50)
@@ -145,6 +150,8 @@ def collect(sb, registry=None, state=None, identity=None) -> dict:
                        ((out.get("home") or {}).get("objects") or {}).values()),
         "drive": out.get("drive"),
         "purposes": len(out.get("purposes") or []),
+        "trips": len(((out.get("travel") or {}).get("trips")) or []),
+        "photos": len(((out.get("travel") or {}).get("photos")) or []),
         "map_nodes": (out.get("map") or {}).get("nodes"),
         "map_clusters": len(((out.get("map") or {}).get("clusters")) or []),
         "peer_talks": len(out.get("peer_talks") or []),
