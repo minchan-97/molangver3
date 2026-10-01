@@ -158,14 +158,25 @@ def day(sb, tv: dict, state, identity=None, piu_identity=None,
     if not trip:
         return {"away": False}
 
-    spot = _pick_spot(trip, state.interests, rng)
-    moved = distance(trip.get("spot") or "공항", spot)
+    here = trip.get("spot") or "공항"
+    tired_now = float(trip.get("tired") or 0.0)
+
+    # 너무 지치면 그 자리에서 쉰다. 쉬는 곳이면 더 잘 풀린다.
+    # (움직일수록 지치니, 쉬는 날이 있어야 여행이 이어진다)
+    if tired_now > 0.95 and rng.random() < 0.7:
+        spot, moved = here, 0.0
+        rested = True
+    else:
+        spot = _pick_spot(trip, state.interests, rng)
+        moved = distance(here, spot)
+        rested = False
     trip["spot"] = spot
     was = float(trip.get("tired") or 0.0)
-    trip["tired"] = max(0.0, min(1.2, was + MOVE_COST * moved
-                                 - (0.7 if spot in REST else 0.0)))
+    relief = 0.7 if spot in REST else (0.3 if rested else 0.0)
+    trip["tired"] = max(0.0, min(1.2, was + MOVE_COST * moved - relief))
 
-    scene = rng.choice(SCENES.get(spot, ["조용한 풍경"]))
+    scene = ("그 자리에 앉아 쉬었다" if rested
+             else rng.choice(SCENES.get(spot, ["조용한 풍경"])))
     photo = {"at": time.time(), "where": "캐럿 아일랜드", "spot": spot,
              "scene": scene, "with": "피우피우", "by": "함께",
              "note": f"{spot}에서 {scene}"}
@@ -198,13 +209,14 @@ def day(sb, tv: dict, state, identity=None, piu_identity=None,
     except Exception:
         pass
 
-    trip["left"] = int(trip.get("left", 1)) - 1
-    log(f"  🏝️ {spot} — {scene}"
+    if not rested:
+        trip["left"] = int(trip.get("left", 1)) - 1
+    log(f"  🏝️ {spot} — {scene}" + ("  (쉬는 중)" if rested else "")
         + (f"  (남은 {trip['left']}일)" if trip["left"] > 0 else "  (마지막 날)"))
 
     out = {"away": True, "spot": spot, "scene": scene, "bumped": bumped,
            "left": trip["left"], "tired": round(trip["tired"], 2),
-           "talk": bool(talk)}
+           "moved": round(moved, 1), "rested": rested, "talk": bool(talk)}
 
     if trip["left"] <= 0:
         out["returned"] = _come_home(sb, tv, state, identity, piu_identity,
