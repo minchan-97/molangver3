@@ -120,11 +120,19 @@ def collect_signals(sb, identity=None, registry=None, state=None) -> list[dict]:
             place = ""
             cue = set()
             try:
-                import home as _hm
-                _hh = _hm.load(sb)
-                place = (_hh.get("where") or {}).get("molang") or ""
-                cue = reminisce.cue_from(place=place,
-                                         room_words=_hm.ROOMS.get(place, []))
+                import travel as _tvr
+                _cur = (_tvr.load(sb) or {}).get("current")
+                if _cur:        # 여행 중이면 섬의 그곳이 계기
+                    import island as _isr
+                    place = _cur.get("spot") or ""
+                    cue = reminisce.cue_from(
+                        place=place, room_words=_isr.SPOTS.get(place, []))
+                else:
+                    import home as _hm
+                    _hh = _hm.load(sb)
+                    place = (_hh.get("where") or {}).get("molang") or ""
+                    cue = reminisce.cue_from(
+                        place=place, room_words=_hm.ROOMS.get(place, []))
             except Exception:
                 pass
             got = reminisce.pick(list(identity.learned_facts), n=1, cue=cue)
