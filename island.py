@@ -294,3 +294,4 @@ def context_line(tv: dict) -> str:
             f"방금 {last.get('scene','')}을(를) 보았다. "
             f"돌아가기까지 {w['left']}일 남았다. "
             "집에 있는 것처럼 말하지 마라. 여기서 본 것을 이야기한다.\n")
+
