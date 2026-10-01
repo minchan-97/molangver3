@@ -167,16 +167,30 @@ def main(mode):
                 from molang_store import SupabaseIdentity
                 from organism.curiosity import nudge_from_memory
                 _id = SupabaseIdentity(store.sb)
-                # 지금 어디에 있고 무엇을 봤는지가 계기가 된다
+                # 지금 어디에 있고 무엇을 봤는지가 계기가 된다.
+                # **여행 중이면 섬의 그곳이 계기여야 한다** — 섬에 있는데
+                # 집 부엌이 기억을 부르면 앞뒤가 안 맞는다.
                 try:
-                    import home as _hm, reminisce as _rm
-                    _hh = _hm.load(store.sb)
-                    _room = (_hh.get('where') or {}).get('molang') or ''
-                    _cue = _rm.cue_from(
-                        place=_room, room_words=_hm.ROOMS.get(_room, []),
-                        topic=(state.last_topic or ''))
+                    import reminisce as _rm, travel as _tvr
+                    _cur = (_tvr.load(store.sb) or {}).get('current')
+                    if _cur:
+                        import island as _isr
+                        _room = _cur.get('spot') or ''
+                        _seen = (_cur.get('seen') or [{}])[-1]
+                        _cue = _rm.cue_from(
+                            place=_room,
+                            room_words=_isr.SPOTS.get(_room, []),
+                            said=_seen.get('scene', ''),
+                            topic=(state.last_topic or ''))
+                    else:
+                        import home as _hm
+                        _hh = _hm.load(store.sb)
+                        _room = (_hh.get('where') or {}).get('molang') or ''
+                        _cue = _rm.cue_from(
+                            place=_room, room_words=_hm.ROOMS.get(_room, []),
+                            topic=(state.last_topic or ''))
                 except Exception:
-                    _cue = set()
+                    _room, _cue = '', set()
                 _rem = nudge_from_memory(state, list(_id.learned_facts), cue=_cue)
                 if isinstance(_rem, dict):       # 계기로 떠오른 경우
                     print(f"  {_room}에서 떠오름 → 관심: "
