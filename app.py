@@ -272,8 +272,43 @@ with st.sidebar:
             if _now and _now.get("away"):
                 st.caption(f"🏝️ **지금 {_now['place']}에 있어요** "
                            f"· 남은 {_now['left']}일 · 지침 {_now['tired']}")
-                if _now.get("seen"):
-                    st.caption("　다녀온 곳: " + " → ".join(_now["seen"]))
+
+                # 섬 지도 — 집과 같은 방식으로 좌표대로 놓는다
+                _ic = _islm.layout()["coords"]
+                _irows = sorted({c[0] for c in _ic.values()})
+                _icols = sorted({c[1] for c in _ic.values()})
+                _ig = {(c[0], c[1]): n for n, c in _ic.items()}
+                _seen = _now.get("seen") or []
+                _emoji = {"공항": "✈️", "호텔": "🛏️", "스파": "♨️", "식당": "🍽️",
+                          "당근농장": "🥕", "바닷가": "🌊", "등대": "🗼",
+                          "산길": "⛰️", "놀이공원": "🎡", "시장": "🏪"}
+                _cells = []
+                for _r in _irows:
+                    for _c in _icols:
+                        _sp = _ig.get((_r, _c))
+                        if not _sp:
+                            _cells.append('<div style="min-height:52px"></div>')
+                            continue
+                        _is_here = _sp == _now.get("spot")
+                        _been = _seen.count(_sp)
+                        _bg = ("rgba(255,138,76,0.85)" if _is_here
+                               else f"rgba(255,180,120,{0.15 + 0.2 * _been:.2f})")
+                        _cells.append(
+                            f'<div style="background:{_bg};border:1px solid '
+                            f'{"#d35400" if _is_here else "#e8c9b0"};'
+                            'border-radius:9px;padding:5px 6px;min-height:52px;'
+                            'text-align:center;">'
+                            f'<div style="font-size:1.05rem">{_emoji.get(_sp,"📍")}</div>'
+                            f'<div style="font-size:0.63rem;color:#444;'
+                            f'font-weight:{"700" if _is_here else "400"}">{_sp}'
+                            + ("<br>🐰🐤" if _is_here else "") + "</div></div>")
+                st.markdown(
+                    f'<div style="display:grid;grid-template-columns:'
+                    f'repeat({len(_icols)},1fr);gap:4px;">'
+                    + "".join(_cells) + "</div>", unsafe_allow_html=True)
+
+                if _seen:
+                    st.caption("　다녀온 곳: " + " → ".join(_seen))
                 _lt = _now.get("last_talk")
                 if _lt:
                     st.caption(f"　🐰 {(_lt.get('molang') or '')[:52]}")
@@ -761,7 +796,17 @@ if msg or photo:
         # 지금 어디에 있는가. 집은 워커가 움직이는데 그 사실이 대화에 안 들어가면
         # 몰랑이는 제 집을 모르는 채로 말하게 된다 (공간과 자기가 따로 논다).
         place_ctx = ""
+        # 여행 중이면 집 위치를 말하면 안 된다.
+        # ("지금 어디야?" 에 부엌이라고 답한 일이 있었다 — 섬에 있었는데)
+        _away = False
         try:
+            import travel as _tvq
+            _away = bool((_tvq.load(sb) or {}).get("current"))
+        except Exception:
+            _away = False
+        try:
+            if _away:
+                raise RuntimeError("여행 중")
             import home as _hm
             _hh = _hm.load(sb)
             _room = (_hh.get("where") or {}).get("molang")
