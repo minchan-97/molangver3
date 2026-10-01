@@ -35,7 +35,8 @@ MAX_PHOTOS = 40
 FARAWAY = {
     "캐럿 아일랜드": {
         "dist": 30.0, "by": "비행기",
-        "words": ["당근", "섬", "밭", "주황", "바닷바람", "등대", "항구"],
+        "words": ["당근", "섬", "밭", "주황", "바다", "바닷바람", "파도",
+                  "등대", "항구", "모래", "여행"],
         "stim": {"밝기": 0.9, "소리": 0.5, "바람": 0.8, "냄새": 0.7},
         "souvenirs": ["당근 모양 열쇠고리", "당근밭 흙이 든 작은 병",
                       "등대가 그려진 엽서", "주황색 조개껍데기"],
@@ -44,7 +45,8 @@ FARAWAY = {
     },
     "눈의 마을": {
         "dist": 42.0, "by": "비행기",
-        "words": ["눈", "겨울", "굴뚝", "모닥불", "고요", "발자국"],
+        "words": ["눈", "겨울", "굴뚝", "모닥불", "고요", "발자국",
+                  "따뜻함", "여행"],
         "stim": {"밝기": 0.6, "소리": 0.1, "바람": 0.6, "냄새": 0.3},
         "souvenirs": ["눈 결정 모양 유리", "털실로 뜬 목도리",
                       "나무를 깎아 만든 작은 집"],
@@ -53,7 +55,8 @@ FARAWAY = {
     },
     "별 보는 사막": {
         "dist": 55.0, "by": "비행기",
-        "words": ["별", "모래", "밤하늘", "은하수", "지평선", "고요"],
+        "words": ["별", "모래", "밤하늘", "은하수", "지평선", "고요",
+                  "우주", "천문학", "여행"],
         "stim": {"밝기": 0.3, "소리": 0.1, "바람": 0.7, "냄새": 0.2},
         "souvenirs": ["별자리가 새겨진 돌", "유리병에 담은 모래",
                       "밤하늘 지도"],
@@ -92,6 +95,26 @@ def save(sb, tv: dict) -> bool:
 
 
 # ── 가고 싶은 마음이 쌓인다 ──────────────────────────────────
+def _closeness(word: str, keys: list) -> float:
+    """
+    낱말이 그곳의 결과 얼마나 가까운가. 0~1.
+    정확히 같은 낱말만 세면 '바다'가 '바닷바람'과 안 이어져 그리움이
+    영영 0 에 머문다. 그래서 임베딩 거리도 함께 본다.
+    """
+    if word in keys:
+        return 1.0
+    # 앞 두 글자가 같으면 (바다/바닷바람)
+    if any(len(word) >= 2 and len(k) >= 2 and word[:2] == k[:2] for k in keys):
+        return 0.7
+    try:
+        from organism.embedder import hashed_embedding as emb
+        v = emb(word, dim=64)
+        best = max(float(v @ emb(k, dim=64)) for k in keys)
+        return max(0.0, min(1.0, (best - 0.2) / 0.6))
+    except Exception:
+        return 0.0
+
+
 def stir_longing(tv: dict, interests: dict, log=print) -> dict:
     """
     관심이 그곳의 결과 겹치면 그리움이 조금 쌓인다.
@@ -99,9 +122,13 @@ def stir_longing(tv: dict, interests: dict, log=print) -> dict:
     """
     grew = {}
     for name, place in FARAWAY.items():
+        keys = place["words"]
         hit = 0.0
-        for w in place["words"]:
-            hit += float((interests or {}).get(w, 0.0))
+        for w, weight in sorted((interests or {}).items(),
+                                key=lambda kv: -kv[1])[:20]:
+            c = _closeness(w, keys)
+            if c > 0.25:
+                hit += float(weight) * c
         if hit <= 0:
             continue
         old = float((tv.setdefault("longing", {})).get(name, 0.0))
