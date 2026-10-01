@@ -212,6 +212,33 @@ def main(mode):
             if state.cycle % every == 0:
                 cyc = curiosity_cycle(state, store, deep=False)
                 out['curiosity'] = cyc
+                # 여행 — **시간당에도 움직인다.** 밤에만 옮기면 하루 한 곳이라
+                # 여행이 아니라 잠자고 일어나면 순간이동하는 꼴이 된다.
+                try:
+                    import travel as _tv
+                    from molang_store import SupabaseIdentity as _SI2
+                    _t = _tv.load(store.sb)
+                    _tv.stir_longing(_t, state.interests)
+                    _piu_id = None
+                    try:
+                        import piupiu as _pp
+                        _piu_id = _pp.identity(store.sb)
+                    except Exception:
+                        pass
+                    _mood_now = ((state.moods or [{}])[-1]
+                                 if getattr(state, 'moods', None) else {})
+                    if _t.get('current'):
+                        import island as _is
+                        out['travel'] = _is.day(
+                            store.sb, _t, state, _SI2(store.sb), _piu_id,
+                            api_key=os.environ.get('OPENAI_API_KEY'))
+                    elif mode in ('nightly', 'all'):
+                        # 떠나는 것은 밤에만 (짐을 싸고 공항까지 가야 하니까)
+                        out['travel'] = _tv.go(store.sb, _t, state,
+                                               _SI2(store.sb), _piu_id, _mood_now)
+                    _tv.save(store.sb, _t)
+                except Exception as e:
+                    out['travel'] = {'error': str(e)[:120]}
                 # 집에서 한 회차 — 다만 여행 중이면 집에 없다
                 try:
                     import home as _home, travel as _tvchk
@@ -388,32 +415,6 @@ def main(mode):
                 out['map'] = _smap.rebuild(store.sb)
             except Exception as e:
                 out['map'] = {'error': str(e)[:120]}
-
-            try:    # 멀리 가고 싶은 마음이 쌓이고, 차면 떠난다 (둘이 함께)
-                import travel as _tv
-                from molang_store import SupabaseIdentity as _SI2
-                _t = _tv.load(store.sb)
-                _tv.stir_longing(_t, state.interests)
-                _piu_id = None
-                try:
-                    import piupiu as _pp
-                    _piu_id = _pp.identity(store.sb)
-                except Exception:
-                    pass
-                _mood_now = ((state.moods or [{}])[-1]
-                             if getattr(state, 'moods', None) else {})
-                if _t.get('current'):
-                    # 이미 섬에 있다 — 한 곳 옮기고, 보고, 둘이 이야기한다
-                    import island as _is
-                    out['travel'] = _is.day(
-                        store.sb, _t, state, _SI2(store.sb), _piu_id,
-                        api_key=os.environ.get('OPENAI_API_KEY'))
-                else:
-                    out['travel'] = _tv.go(store.sb, _t, state,
-                                           _SI2(store.sb), _piu_id, _mood_now)
-                _tv.save(store.sb, _t)
-            except Exception as e:
-                out['travel'] = {'error': str(e)[:120]}
 
             try:        # 낮에 못 다룬 것이 겹쳐 꿈이 된다 (사실이 되지는 않는다)
                 import dream as _dream
