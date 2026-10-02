@@ -47,6 +47,10 @@ class PathRecord:
     sources: list = field(default_factory=list)  # 가져온 근거 자료 (감사: 무엇을 근거로)
     timestamp: str = ""         # 시각 (감사: 언제)
     verified: bool = True       # 자기검증 통과 여부
+    # 재현을 위한 기록 — 경로가 남아도 '그때 무엇을 보고 그 길을 골랐나' 가
+    # 없으면 다시 돌릴 수 없다. 기록이 남은 것과 재현되는 것은 다르다.
+    at_probs: list = field(default_factory=list)   # 각 갈림길의 그때 확률
+    seed: Optional[int] = None                     # 무작위 선택에 쓴 씨앗
 
 
 class ThoughtStructure:
@@ -104,14 +108,21 @@ class ThoughtStructure:
     # ── LLM 이동 (사고) ──
     def traverse(self, choose_fn: Optional[Callable] = None,
                  answer_fn: Optional[Callable] = None,
-                 context: str = "") -> PathRecord:
+                 context: str = "", seed: Optional[int] = None) -> PathRecord:
         """
         트리를 따라 이동하며 사고.
         choose_fn(node, candidates, probs, context) -> chosen_id
           없으면 전이 확률로 자동 선택(시뮬).
         answer_fn(path, context) -> answer  (최종 답변, 선택)
+
+        seed 를 주면 무작위 선택이 결정적이 되어 **같은 입력으로 같은 경로**가
+        나온다. 기록에 그때의 갈림길 확률과 씨앗이 함께 남으므로,
+        나중에 그 결정을 다시 돌려보거나 "그때 이 값이 달랐다면" 을
+        확인할 수 있다 (replay / counterfactual).
         """
-        path, choices = [], []
+        import random as _rnd
+        rng = _rnd.Random(seed) if seed is not None else _rnd
+        path, choices, at_probs = [], [], []
         cur = self.root_id
         depth = 0
         while cur and depth < 20:
@@ -130,8 +141,13 @@ class ThoughtStructure:
                                    [self.nodes[c] for c in candidates],
                                    probs, context)
             else:
-                chosen = random.choices(candidates, weights=probs)[0]
+                chosen = rng.choices(candidates, weights=probs)[0]
 
+            # 그때의 갈림길 확률을 함께 남긴다 (재현용)
+            at_probs.append({"at": cur,
+                             "options": {c: round(float(p), 4)
+                                         for c, p in zip(candidates, probs)},
+                             "chose": chosen})
             choices.append({"at": cur, "chose": chosen})
             cur = chosen
             depth += 1
@@ -149,8 +165,48 @@ class ThoughtStructure:
         from datetime import datetime
         rec = PathRecord(path=path, choices=choices, answer=answer,
                          context=context, sources=sources or [],
-                         timestamp=datetime.now().isoformat(timespec="seconds"))
+                         timestamp=datetime.now().isoformat(timespec="seconds"),
+                         at_probs=at_probs, seed=seed)
         return rec
+
+    # ── 되돌려 다시 돌리기 (replay / counterfactual) ──
+    def replay(self, record: PathRecord, what_if: dict = None) -> dict:
+        """
+        기록만으로 그 결정을 **다시 돌린다.**
+        what_if 를 주면 그때의 갈림길 확률을 바꿔 "그랬다면" 을 확인한다.
+          what_if = {"노드id": {"선택지id": 새확률, ...}}
+
+        반환: {"same": 같은 경로였나, "path": 다시 돈 경로,
+               "diverged_at": 갈라진 지점, "original": 원래 경로}
+        """
+        import random as _rnd
+        if not record.at_probs:
+            return {"same": None, "why": "그때의 갈림길 확률이 기록에 없음"}
+
+        rng = _rnd.Random(record.seed) if record.seed is not None else _rnd.Random(0)
+        path, diverged = [], None
+        for i, step in enumerate(record.at_probs):
+            at = step["at"]
+            opts = dict(step["options"])
+            if what_if and at in what_if:
+                opts.update(what_if[at])          # 그때 이 값이 달랐다면
+            keys = list(opts)
+            weights = [max(0.0, float(opts[k])) for k in keys]
+            if sum(weights) <= 0:
+                break
+            chose = rng.choices(keys, weights=weights)[0]
+            path.append(at)
+            if chose != step["chose"] and diverged is None:
+                diverged = {"at": at, "was": step["chose"], "now": chose}
+            if diverged:
+                # 갈라졌으면 그 뒤는 원래 기록과 다른 길이다
+                path.append(chose)
+                break
+            path.append(chose)
+
+        same = diverged is None
+        return {"same": same, "path": path, "diverged_at": diverged,
+                "original": list(record.path)}
 
     # ── 자기검증 (옛 설계 self_verify) ──
     def verify(self, record: PathRecord) -> dict:
