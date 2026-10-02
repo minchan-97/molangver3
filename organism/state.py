@@ -19,6 +19,7 @@ class OrganismState:
     last_qe: float = 0.0                            # 지도가 얼마나 어수선한가
     drive: float = 0.0                              # 쌓인 충동 (프로이트)
     last_fed: int = 0                               # 이번 회차에 소화한 근거 수
+    obs_at_last_type: int = 0                       # 마지막 사고 틀 자생 때의 관측 수
     candidates: list = field(default_factory=list)
     quarantine: list = field(default_factory=list)
     rejected: list = field(default_factory=list)
