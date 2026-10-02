@@ -171,9 +171,19 @@ def converse(sb, mol_ident, piu_ident, seen: dict, api_key=None,
         pass
 
     # 2) 서로에 대해 알게 된 것 — 주어를 붙여 저장 (섞이지 않게)
+    #
+    # **지시문이 그대로 내용으로 오는 일을 막는다.**
+    # LLM 이 빈칸을 채우는 대신 양식의 설명을 복사해서
+    # "피우피우는 몰랑이가 피우피우에 대해 알게 된 것 또는 빈 문자열" 이
+    # 사실로 저장된 일이 있었다.
+    _TEMPLATE = ("알게 된 것", "빈 문자열", "낱말 하나", "또는 빈",
+                 "molang_learns", "piupiu_learns", "topic_for_piupiu")
+
     for ident, key, who in ((mol_ident, "molang_learns", "피우피우"),
                             (piu_ident, "piupiu_learns", "몰랑이")):
         t = (talk.get(key) or "").strip()
+        if any(x in t for x in _TEMPLATE):
+            continue
         if 4 <= len(t) <= 80:
             try:
                 ident._reinforce_or_add(
