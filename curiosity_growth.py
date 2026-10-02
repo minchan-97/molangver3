@@ -229,6 +229,7 @@ def propose_type(registry, topics, api_key=None, model=None, log=print):
     return None
 
 
+NEW_TYPE_EVERY = 40      # 관측이 이만큼 늘면 새 사고 틀을 한 번 시도한다
 MERGE_MIN_USES = 6          # 이만큼은 쓰여야 합칠 후보
 MERGE_MIN_MEM = 3           # 근거도 이만큼 쌓였을 때
 
@@ -273,20 +274,29 @@ def run(sb, registry, state=None, api_key=None, embed_fn=None, classify_fn=None,
         out["merged"] = merge_candidates(registry, log=log)
     except Exception as e:
         out["merged"] = f"실패: {str(e)[:60]}"
-    # 관심은 큰데 어느 트리로도 안 잡히는 주제들 → 새 유형 후보
+    # 새 사고 틀은 **자료가 쌓였을 때** 자란다.
+    #
+    # 예전 조건은 '어느 트리로도 안 잡히는 주제가 2개 이상' 이었다.
+    # 그런데 트리 찾기를 '못 찾으면 가장 덜 배운 트리에 붙인다' 로 고치면서
+    # 고아 주제가 영영 안 생겨 이 단계가 한 번도 돌지 않았다.
+    # (고치려던 두 가지가 서로를 막은 셈이다)
+    #
+    # 그래서 기준을 바꾼다: **관측이 NEW_TYPE_EVERY 건 늘 때마다 한 번 시도.**
+    # 자라야 할 근거가 쌓였을 때 자라는 것이 자연스럽다.
+    # 만들지 말지는 structure_grow 와 logic_check 가 정한다
+    # (갈래가 안 갈리면 거부, 기존 유형과 겹치면 거부).
     if state is not None:
-        orphan = []
-        for t, w in sorted((state.interests or {}).items(),
-                           key=lambda kv: -kv[1])[:12]:
-            tid, tree = _topic_tree(registry, t, embed_fn, classify_fn)
-            if tree is None and w >= 0.3:
-                orphan.append(t)
-        # 새 사고 틀은 로컬에서 자란다 (지도에 모인 묶음 → 단계와 갈래)
-        if len(orphan) >= 2:
-            try:
+        try:
+            seen = int(getattr(state, "obs_at_last_type", 0) or 0)
+            now = len(getattr(state, "observations", []) or [])
+            if now - seen >= NEW_TYPE_EVERY:
                 import structure_grow
                 out["new_type"] = structure_grow.grow(sb, registry, api_key,
                                                       log=log)
-            except Exception as e:
-                out["new_type"] = {"error": str(e)[:80]}
+                state.obs_at_last_type = now
+            else:
+                out["new_type"] = {"skip": f"관측 {now - seen}건 늘어남 "
+                                           f"(필요 {NEW_TYPE_EVERY})"}
+        except Exception as e:
+            out["new_type"] = {"error": str(e)[:80]}
     return out
