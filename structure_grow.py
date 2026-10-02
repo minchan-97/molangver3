@@ -46,8 +46,21 @@ def _words(texts) -> Counter:
             c[w] += 1
     try:
         from organism.curiosity import _is_topic_like, strip_josa
-        return Counter({strip_josa(w): n for w, n in c.items()
-                        if _is_topic_like(strip_josa(w))})
+        out = Counter()
+        for w, n in c.items():
+            w = strip_josa(w)
+            if not _is_topic_like(w):
+                continue
+            # 출처 이름이 사고 단계가 되면 안 된다.
+            # ('한국민족문화대백과사전 견주기' 같은 단계가 실제로 나왔다)
+            try:
+                import reader
+                if reader.is_medium(w) or len(w) > 8:
+                    continue
+            except Exception:
+                pass
+            out[w] += n
+        return out
     except Exception:
         return c
 
@@ -196,6 +209,14 @@ def grow(sb, registry, api_key=None, log=print):
     tid = registry.create_from_design(
         design, design.get("name_word", ""),
         reason=f"지도에서 모인 묶음 {design['evidence']['n']}건")
+    if not tid:
+        why = ""
+        for c in reversed(getattr(registry, "creation_log", []) or []):
+            if c.get("skipped"):
+                why = c.get("reason") or c.get("merged_into") or ""
+                break
+        log(f"  사고 틀 거부됨: {why or '까닭 미기록'}")
+        return {"made": None, "why": why or "거부됨", "design": design}
     if tid:
         # 갈래 확률을 실제 분포로 (지어낸 값이 아니라 지금까지의 경험)
         try:
