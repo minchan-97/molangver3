@@ -869,7 +869,16 @@ if msg or photo:
             except Exception:
                 pass
             _desc = _tv.describe(_t)
-            _ph = _tv.recall_photo(_t, cue=q)
+            # 질문과 이어질 때만 사진을 꺼낸다. 늘 넣으면 프롬프트만 길어지고
+            # 정작 정체성 지시가 묻힌다.
+            _ph = _tv.recall_photo(_t, cue=q) if len(q) >= 2 else None
+            if _ph:
+                import re as _re2
+                _qw = set(_re2.findall(r"[가-힣A-Za-z]{2,}", q))
+                _pw = set(_re2.findall(r"[가-힣A-Za-z]{2,}",
+                                       f"{_ph.get('where','')} {_ph.get('scene','')}"))
+                if not (_qw & _pw):
+                    _ph = None
             # += 여야 한다. = 로 덮어쓰면 바로 위에서 만든 '여행 중' 맥락이
             # 지워져서, 섬에 있으면서 집에 있는 것처럼 말하게 된다.
             if _desc:
@@ -900,7 +909,9 @@ if msg or photo:
             pb = base64.b64encode(photo.getvalue()).decode()
             try:
                 r = client.chat.completions.create(model="gpt-4o",
-                    messages=[{"role":"system","content":u.identity.to_system_prompt(question=q)+"\n"+self_ctx+"\n"+place_ctx+"\n"+time_ctx+"\n"+travel_ctx+"\n"+purpose_ctx+"\n"+guard_ctx},
+                    messages=[{"role":"system","content":u.identity.to_system_prompt(question=q)+"\n"+self_ctx+"\n"+place_ctx+"\n"+time_ctx+"\n"+travel_ctx+"\n"+purpose_ctx+"\n"+guard_ctx
+                     +"\n[말투] 너는 몰랑이다. 반말로, 토끼답게, 짧고 다정하게 답한다."
+                      " '저는/하시나요' 같은 존댓말을 쓰지 마라."},
                         {"role":"user","content":[
                             {"type":"text","text":"이 사진 보고 몰랑이답게 반응해줘!"},
                             {"type":"image_url","image_url":{"url":f"data:{photo.type};base64,{pb}"}}]}],
@@ -909,12 +920,18 @@ if msg or photo:
             except Exception: answer = "우와 사진이다! 🐰💗"
             result = None
         else:
+            # 맥락이 길어지면 맨 앞의 정체성 지시가 묻힌다.
+            # (여행 중 긴 프롬프트에서 몰랑이가 존댓말 챗봇처럼 답한 일이 있었다)
+            # 그래서 **맨 뒤에 말투를 한 번 더** 못박는다. 마지막 지시가 가장 세다.
+            tail_ctx = ("[말투] 너는 몰랑이다. 반말로, 토끼답게, 짧고 다정하게 "
+                        "답한다. '저는/하시나요' 같은 존댓말을 쓰지 마라.\n")
             bg = self_ctx + ((" " + place_ctx) if place_ctx else "") \
                  + ((" " + time_ctx) if time_ctx else "") \
                  + (("\n" + travel_ctx) if travel_ctx else "") \
                  + (("\n" + purpose_ctx) if purpose_ctx else "") \
                  + (("\n" + map_ctx) if map_ctx else "") \
-                 + (("\n" + guard_ctx) if guard_ctx else "")
+                 + (("\n" + guard_ctx) if guard_ctx else "") \
+                 + ("\n" + tail_ctx)
             # 최근 대화를 맥락으로 — 이게 없으면 몰랑이가 자기가 방금 한 말도 모른다
             _recent_lines = []
             for _r, _t, _ in st.session_state.chat[-7:-1]:
@@ -1003,4 +1020,3 @@ if msg or photo:
     if photo:
         st.session_state.photo_key += 1   # 업로더 리셋 → 같은 사진 재반응 방지
     st.rerun()
-
