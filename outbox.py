@@ -180,7 +180,44 @@ def collect_signals(sb, identity=None, registry=None, state=None) -> list[dict]:
     except Exception:
         pass
 
-    # 9) 오래 조용함
+    # 9) 바깥이 궁금하다 — 액자에서 잠깐 내다보기
+    #
+    # 초상화 속 인물처럼, 평소엔 자기 삶을 살다가 가끔 밖을 내다본다.
+    # 카메라는 **사람이 눌러야** 켜진다(브라우저가 그렇게 막아 둔다).
+    # 그래서 '보고 싶다'까지가 이 아이 몫이고, 셔터는 사람 몫이다.
+    # 그편이 안전하기도 하다 — 늘 지켜보는 눈이 되지 않는다.
+    try:
+        import random as _rnd
+        m = (getattr(state, "moods", None) or [{}])[-1]
+        curious = (m.get("name") in ("심심함", "들뜸")
+                   or float(m.get("surprise") or 0) > 0.6)
+        # 오늘 이미 내다봤으면 또 조르지 않는다
+        seen_today = (sb.table("molang_outbox").select("id", count="exact")
+                      .eq("rule", "peek")
+                      .gte("created_at", _now().strftime("%Y-%m-%d"))
+                      .execute().count or 0)
+        if curious and not seen_today and _rnd.random() < 0.35:
+            want = ""
+            try:
+                top = sorted((getattr(state, "interests", {}) or {}).items(),
+                             key=lambda kv: -kv[1])[:5]
+                top = [k for k, v in top if v >= 1.0 and len(k) >= 2]
+                if top:
+                    want = _rnd.choice(top)
+            except Exception:
+                pass
+            import random as _r2
+            if want and _r2.random() < 0.45:
+                _ask = f"{want} 소리 지금 들려? 들려줄래?"
+            elif want:
+                _ask = f"{want} 같은 거 지금 거기 있어? 보여줄래?"
+            else:
+                _ask = "지금 거기 어때? 잠깐 보여주거나 들려줄래?"
+            out.append({"rule": "peek", "weight": 2, "detail": _ask})
+    except Exception:
+        pass
+
+    # 10) 오래 조용함
     try:
         rows = (sb.table("molang_episodes").select("created_at")
                 .order("id", desc=True).limit(1).execute().data) or []
@@ -206,6 +243,7 @@ TEMPLATES = {
     "dream": "나 간밤에 이런 꿈을 꿨어. {detail}",
     "peer": "{detail}",
     "mood": "{detail}",
+    "peek": "{detail}",
 }
 
 # 다듬기는 '말투만' 손대게 한다. 화자를 뒤집거나 내용을 빼면 먼저 말 걸기가
@@ -350,4 +388,3 @@ def mark_sent(sb, ids: list[int]):
             {"sent_at": _now().isoformat()}).in_("id", ids).execute()
     except Exception:
         pass
-
