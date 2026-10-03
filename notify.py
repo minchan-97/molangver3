@@ -100,9 +100,10 @@ def push_pending(sb, app_url: str = "", log=print) -> dict:
         return {"sent": 0, "why": "오늘은 충분히 말했음"}
 
     try:
+        # 아직 사람에게 안 전해진 말 (sent_at 이 비어 있는 것)
         rows = (sb.table("molang_outbox")
                 .select("id,rule,body,created_at")
-                .eq("sent", False).eq("notified", False)
+                .is_("sent_at", "null").eq("notified", False)
                 .order("id", desc=True).limit(3).execute().data) or []
     except Exception as e:
         return {"sent": 0, "why": str(e)[:60]}
