@@ -326,6 +326,16 @@ def main(mode):
             if _loaded == 0:
                 print("  ⚠️ 사고 트리를 하나도 못 불러왔습니다 "
                       "(molang_registry 확인 필요)")
+            # 복원이 크게 줄었으면 **저장하지 않는다.**
+            # 덜 불러온 상태로 저장하면 그게 덮어써져서 영영 잃는다.
+            _prev = int(getattr(state, 'tree_count', 0) or 0)
+            _safe_to_save = True
+            if _prev and len(_reg.trees) < _prev * 0.8:
+                print(f"  ⚠️ 사고 유형이 {_prev} → {len(_reg.trees)} 로 줄었습니다. "
+                      "이번 회차는 저장하지 않습니다 (덮어쓰기 방지)")
+                _safe_to_save = False
+            else:
+                state.tree_count = len(_reg.trees)
             _gone = _reg.wither()
             if _gone:
                 print(f"  안 쓰인 사고유형 정리: {', '.join(_gone)}")
@@ -340,7 +350,8 @@ def main(mode):
                 api_key=os.environ.get('OPENAI_API_KEY'), log=print)
             if out['growth'].get('deepened') or out['growth'].get('new_type') \
                     or out['growth'].get('memory', {}).get('fed'):
-                _rs = registry_store.save(store.sb, _reg)
+                _rs = (registry_store.save(store.sb, _reg) if _safe_to_save
+                       else {"ok": True, "skipped": "복원이 불완전해 저장 보류"})
                 if not _rs.get("ok"):
                     print(f"  ⚠️ 트리 저장 실패: {_rs.get('error')}")
         except Exception as e:
