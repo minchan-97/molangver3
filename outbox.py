@@ -332,12 +332,25 @@ def make(sb, identity=None, registry=None, api_key=None, state=None, log=print):
     """계기가 있으면 한 마디를 만들어 outbox 에 넣는다. 없으면 None."""
     if QUIET_HOURS[0] <= _now().hour < QUIET_HOURS[1]:
         return None
-    if _sent_today(sb) >= MAX_PER_DAY:
-        return None
-
     signals = collect_signals(sb, identity, registry, state)
     if not signals:
         return None
+
+    # 하루 상한은 '조잘거리는 말'에만 건다.
+    # 묻는 말(물어보고 기다리는 것)은 그와 성격이 다르므로 따로 센다.
+    ASK = ("peek", "waiting", "confirm")
+    if _sent_today(sb) >= MAX_PER_DAY:
+        signals = [s for s in signals if s["rule"] in ASK]
+        if not signals:
+            return None
+        # 묻는 말도 쌓이면 곤란하다 — 아직 답 안 한 것이 3개면 멈춘다
+        try:
+            waiting = len([p for p in pending(sb, limit=10)
+                           if p.get("rule") in ASK])
+            if waiting >= 3:
+                return None
+        except Exception:
+            pass
 
     last = _last_rule(sb)
     signals = [s for s in signals if s["rule"] != last] or signals
