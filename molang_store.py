@@ -334,6 +334,16 @@ class SupabaseIdentity:
                                      {'merged_into': f['text']})
                 return
 
+        # 들어온 것과 부딪히는 기존 사실이 있으면 **양쪽 다** 깎는다.
+        # 어느 쪽이 맞는지 아직 모르기 때문이다. 나중에 한쪽이 다시
+        # 확인되면 자연히 갈린다. (지우지 않는 이유이기도 하다)
+        try:
+            import belief_decay as _bd
+            _bd.apply_conflict(self.sb, fact, self._facts,
+                               log=lambda *a: None)
+        except Exception:
+            pass
+
         kind = classify_kind(fact)
         expires = None
         if kind == 'state':
