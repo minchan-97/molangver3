@@ -286,368 +286,380 @@ with st.sidebar:
                     except Exception as e:
                         st.error(f"옮기기 실패: {e}")
 
-    # 💬 묻는 말 — **한 번에 하나씩.**
-    #
-    # 궁금한 것, 기다린 것, 맞춰볼 것이 한꺼번에 뜨면 취조가 된다.
-    # 오래된 것부터 하나만 보여주고, 답하면 다음이 나온다.
+    # ── 보고 싶은 것만 골라 보기 ──────────────────────────────
+    # 한 화면에 전부 늘어놓으면 정신이 없다. 탭으로 나눈다.
+    # 묻는 말은 맨 앞에 둔다 — 답을 기다리는 쪽이 먼저다.
     try:
-        _asks = [p for p in outbox.pending(sb, limit=10)
-                 if p.get("rule") in ("peek", "waiting", "confirm")]
-        _asks.sort(key=lambda p: p.get("id") or 0)      # 오래된 것부터
-        if _asks:
-            _a = _asks[0]
-            _rule = _a.get("rule")
-            _pay = _a.get("payload") or {}
-            _left = len(_asks) - 1
-
-            st.markdown("---")
-            st.markdown("### 💬 물어볼 게 있대요"
-                        + (f"  ({_left}개 더)" if _left else ""))
-            st.caption("🐰 " + (_a.get("body") or ""))
-
-            import caring as _cr
-
-            def _done(extra=None):
-                outbox.mark_sent(sb, [_a.get("id")])
-                if extra:
-                    extra()
-                st.rerun()
-
-            if _rule == "confirm":
-                _c1, _c2, _c3 = st.columns(3)
-                _fid = _pay.get("fact_id")
-                with _c1:
-                    if safe(st.button, "응, 맞아", key=uk(f"ak_y{_a.get('id')}")):
-                        _done(lambda: _fid and _cr.confirm_belief(sb, _fid, True))
-                with _c2:
-                    if safe(st.button, "아니야", key=uk(f"ak_n{_a.get('id')}")):
-                        _done(lambda: _fid and _cr.confirm_belief(sb, _fid, False))
-                with _c3:
-                    if safe(st.button, "나중에", key=uk(f"ak_l{_a.get('id')}")):
-                        _done()
-
-            elif _rule == "peek":
-                _c1, _c2 = st.columns(2)
-                with _c1:
-                    _shot = safe(st.camera_input, "📷 보여주기",
-                                 key=uk("peek_cam"))
-                    if _shot is not None:
-                        st.session_state["peek_photo"] = _shot.getvalue()
-                        st.session_state["peek_id"] = _a.get("id")
-                        st.caption("보여줬어요. 아래 대화에서 반응을 들어보세요.")
-                with _c2:
-                    _snd = None
-                    try:
-                        _snd = st.audio_input("🎤 들려주기", key=uk("peek_mic"))
-                    except Exception:
-                        st.caption("(이 판에서는 녹음을 못 써요)")
-                    if _snd is not None:
-                        st.session_state["peek_sound"] = _snd.getvalue()
-                        st.session_state["peek_id"] = _a.get("id")
-                        st.caption("들려줬어요.")
-                if safe(st.button, "지금은 안 돼", key=uk(f"ak_s{_a.get('id')}")):
-                    _done()
-
-            else:   # waiting
-                _c1, _c2 = st.columns(2)
-                with _c1:
-                    if safe(st.button, "대답할게",
-                            key=uk(f"ak_a{_a.get('id')}")):
-                        _wid = _pay.get("wait_id")
-                        _done(lambda: _wid and _cr.mark_asked(sb, _wid))
-                with _c2:
-                    if safe(st.button, "나중에", key=uk(f"ak_w{_a.get('id')}")):
-                        _done()
+        _t_ask, _t_live, _t_mind, _t_check = st.tabs(
+            ["💬 묻는 말", "🏠 사는 곳", "🕸️ 머릿속", "📥 검토"])
     except Exception:
-        pass
+        _t_ask = _t_live = _t_mind = _t_check = st.container()
 
-    # 검토 대기 — 검토함이 두 곳이다(대화에서 격리된 사실 + 워커가 찾아온 관측).
-    # 앱이 한 쪽만 읽어서 워커가 격리해도 0으로 보이던 문제를 고쳤다.
-    _cnt = review_box.counts(sb, u.identity)
-    _q = review_box.pending(sb, u.identity, 20)
-    # 호기심이 사고 구조를 얼마나 바꿨나
-    try:
-        _grown = sum(1 for t in u.registry.trees.values()
-                     for n in t.nodes if str(n).startswith("grown_"))
-        _tmem = sum(len(getattr(t, "memory", [])) for t in u.registry.trees.values())
-        _used = sum((u.registry.usage_count or {}).values())
-        st.caption(f"🌳 사고 기억 {_tmem}개 · 늘린 판단 단계 {_grown}개 · "
-                   f"트리 사용 {_used}회")
-        if st.session_state.get("_tree_save_error"):
-            st.error(f"트리 저장 실패: {st.session_state['_tree_save_error'][:80]}")
-    except Exception:
-        pass
-
-    if st.session_state.get("_guard_note"):
-        st.caption("🛑 " + st.session_state["_guard_note"])
-
-    _bump = st.session_state.get("_last_bumped")
-    if _bump:
-        st.caption(f"🌱 요즘 관심: {', '.join(_bump[:5])}")
-
-    # ✈️ 여행 — 사진과 기념품
-    try:
-        import travel as _tvm
-        _tt = _tvm.load(sb)
-        _trips = _tt.get("trips") or []
-        _long = _tt.get("longing") or {}
-        _now = None
+    with _t_ask:
+        # 💬 묻는 말 — **한 번에 하나씩.**
+        #
+        # 궁금한 것, 기다린 것, 맞춰볼 것이 한꺼번에 뜨면 취조가 된다.
+        # 오래된 것부터 하나만 보여주고, 답하면 다음이 나온다.
         try:
-            import island as _islm
-            _now = _islm.where_now(_tt)
+            _asks = [p for p in outbox.pending(sb, limit=10)
+                     if p.get("rule") in ("peek", "waiting", "confirm")]
+            _asks.sort(key=lambda p: p.get("id") or 0)      # 오래된 것부터
+            if _asks:
+                _a = _asks[0]
+                _rule = _a.get("rule")
+                _pay = _a.get("payload") or {}
+                _left = len(_asks) - 1
+
+                st.markdown("---")
+                st.markdown("### 💬 물어볼 게 있대요"
+                            + (f"  ({_left}개 더)" if _left else ""))
+                st.caption("🐰 " + (_a.get("body") or ""))
+
+                import caring as _cr
+
+                def _done(extra=None):
+                    outbox.mark_sent(sb, [_a.get("id")])
+                    if extra:
+                        extra()
+                    st.rerun()
+
+                if _rule == "confirm":
+                    _c1, _c2, _c3 = st.columns(3)
+                    _fid = _pay.get("fact_id")
+                    with _c1:
+                        if safe(st.button, "응, 맞아", key=uk(f"ak_y{_a.get('id')}")):
+                            _done(lambda: _fid and _cr.confirm_belief(sb, _fid, True))
+                    with _c2:
+                        if safe(st.button, "아니야", key=uk(f"ak_n{_a.get('id')}")):
+                            _done(lambda: _fid and _cr.confirm_belief(sb, _fid, False))
+                    with _c3:
+                        if safe(st.button, "나중에", key=uk(f"ak_l{_a.get('id')}")):
+                            _done()
+
+                elif _rule == "peek":
+                    _c1, _c2 = st.columns(2)
+                    with _c1:
+                        _shot = safe(st.camera_input, "📷 보여주기",
+                                     key=uk("peek_cam"))
+                        if _shot is not None:
+                            st.session_state["peek_photo"] = _shot.getvalue()
+                            st.session_state["peek_id"] = _a.get("id")
+                            st.caption("보여줬어요. 아래 대화에서 반응을 들어보세요.")
+                    with _c2:
+                        _snd = None
+                        try:
+                            _snd = st.audio_input("🎤 들려주기", key=uk("peek_mic"))
+                        except Exception:
+                            st.caption("(이 판에서는 녹음을 못 써요)")
+                        if _snd is not None:
+                            st.session_state["peek_sound"] = _snd.getvalue()
+                            st.session_state["peek_id"] = _a.get("id")
+                            st.caption("들려줬어요.")
+                    if safe(st.button, "지금은 안 돼", key=uk(f"ak_s{_a.get('id')}")):
+                        _done()
+
+                else:   # waiting
+                    _c1, _c2 = st.columns(2)
+                    with _c1:
+                        if safe(st.button, "대답할게",
+                                key=uk(f"ak_a{_a.get('id')}")):
+                            _wid = _pay.get("wait_id")
+                            _done(lambda: _wid and _cr.mark_asked(sb, _wid))
+                    with _c2:
+                        if safe(st.button, "나중에", key=uk(f"ak_w{_a.get('id')}")):
+                            _done()
         except Exception:
             pass
-        if _trips or _long or (_now and _now.get("away")):
+
+    with _t_live:
+        # ✈️ 여행 — 사진과 기념품
+        try:
+            import travel as _tvm
+            _tt = _tvm.load(sb)
+            _trips = _tt.get("trips") or []
+            _long = _tt.get("longing") or {}
+            _now = None
+            try:
+                import island as _islm
+                _now = _islm.where_now(_tt)
+            except Exception:
+                pass
+            if _trips or _long or (_now and _now.get("away")):
+                st.markdown("---")
+                st.markdown("### ✈️ 여행")
+                if _now and _now.get("away"):
+                    st.caption(f"🏝️ **지금 {_now['place']}에 있어요** "
+                               f"· 남은 {_now['left']}일 · 지침 {_now['tired']}")
+
+                    # 섬 지도 — 집과 같은 방식으로 좌표대로 놓는다
+                    _ic = _islm.layout()["coords"]
+                    _irows = sorted({c[0] for c in _ic.values()})
+                    _icols = sorted({c[1] for c in _ic.values()})
+                    _ig = {(c[0], c[1]): n for n, c in _ic.items()}
+                    _seen = _now.get("seen") or []
+                    _emoji = {"공항": "✈️", "호텔": "🛏️", "스파": "♨️", "식당": "🍽️",
+                              "당근농장": "🥕", "바닷가": "🌊", "등대": "🗼",
+                              "산길": "⛰️", "놀이공원": "🎡", "시장": "🏪"}
+                    _cells = []
+                    for _r in _irows:
+                        for _c in _icols:
+                            _sp = _ig.get((_r, _c))
+                            if not _sp:
+                                _cells.append('<div style="min-height:52px"></div>')
+                                continue
+                            _is_here = _sp == _now.get("spot")
+                            _been = _seen.count(_sp)
+                            _bg = ("rgba(255,138,76,0.85)" if _is_here
+                                   else f"rgba(255,180,120,{0.15 + 0.2 * _been:.2f})")
+                            _cells.append(
+                                f'<div style="background:{_bg};border:1px solid '
+                                f'{"#d35400" if _is_here else "#e8c9b0"};'
+                                'border-radius:9px;padding:5px 6px;min-height:52px;'
+                                'text-align:center;">'
+                                f'<div style="font-size:1.05rem">{_emoji.get(_sp,"📍")}</div>'
+                                f'<div style="font-size:0.63rem;color:#444;'
+                                f'font-weight:{"700" if _is_here else "400"}">{_sp}'
+                                + ("<br>🐰🐤" if _is_here else "") + "</div></div>")
+                    st.markdown(
+                        f'<div style="display:grid;grid-template-columns:'
+                        f'repeat({len(_icols)},1fr);gap:4px;">'
+                        + "".join(_cells) + "</div>", unsafe_allow_html=True)
+
+                    if _seen:
+                        st.caption("　다녀온 곳: " + " → ".join(_seen))
+                    _lt = _now.get("last_talk")
+                    if _lt:
+                        st.caption(f"　🐰 {(_lt.get('molang') or '')[:52]}")
+                        st.caption(f"　🐤 {(_lt.get('piupiu') or '')[:52]}")
+                if _trips:
+                    _last = _trips[-1]
+                    st.caption(f"{len(_trips)}번 다녀옴 · 마지막은 **{_last['where']}**"
+                               f" ({_last.get('by','')})")
+                _want = sorted(_long.items(), key=lambda kv: -kv[1])[:2]
+                for _n, _v in _want:
+                    if _v <= 0:
+                        continue
+                    _bar = "█" * max(1, int(10 * min(1.0, _v / 1.0)))
+                    st.caption(f"　{_n} 가고 싶음 {_bar} {_v:.2f}")
+                _photos = (_tt.get("photos") or [])[::-1]
+                if _photos:
+                    with st.expander(f"📷 사진 {len(_photos)}장"):
+                        for _p in _photos[:8]:
+                            st.caption("　" + _tvm.photo_line(_p))
+                _souv = (_tt.get("souvenirs") or [])[::-1]
+                if _souv:
+                    st.caption("🎁 " + " · ".join(
+                        f"{s['name']}({s['from']})" for s in _souv[:4]))
+        except Exception:
+            pass
+
+        # 🏠 둘의 집과 바깥 — 어디에 있고, 무엇을 놓아뒀고, 무엇이 바뀌었나
+        try:
+            import home as _home
+            import land as _land
+            _h = _home.load(sb)
+            _ld = _land.load(sb)
+            _where = _h.get("where") or {}
+            _objs = _h.get("objects") or {}
+            _visits = _h.get("visits") or {}
+            _mx = max(1, max(_visits.values()) if _visits else 1)
+            _coords = _home.layout()["coords"]
+
             st.markdown("---")
-            st.markdown("### ✈️ 여행")
-            if _now and _now.get("away"):
-                st.caption(f"🏝️ **지금 {_now['place']}에 있어요** "
-                           f"· 남은 {_now['left']}일 · 지침 {_now['tired']}")
+            st.markdown("### 🏠 둘의 집")
 
-                # 섬 지도 — 집과 같은 방식으로 좌표대로 놓는다
-                _ic = _islm.layout()["coords"]
-                _irows = sorted({c[0] for c in _ic.values()})
-                _icols = sorted({c[1] for c in _ic.values()})
-                _ig = {(c[0], c[1]): n for n, c in _ic.items()}
-                _seen = _now.get("seen") or []
-                _emoji = {"공항": "✈️", "호텔": "🛏️", "스파": "♨️", "식당": "🍽️",
-                          "당근농장": "🥕", "바닷가": "🌊", "등대": "🗼",
-                          "산길": "⛰️", "놀이공원": "🎡", "시장": "🏪"}
-                _cells = []
-                for _r in _irows:
-                    for _c in _icols:
-                        _sp = _ig.get((_r, _c))
-                        if not _sp:
-                            _cells.append('<div style="min-height:52px"></div>')
-                            continue
-                        _is_here = _sp == _now.get("spot")
-                        _been = _seen.count(_sp)
-                        _bg = ("rgba(255,138,76,0.85)" if _is_here
-                               else f"rgba(255,180,120,{0.15 + 0.2 * _been:.2f})")
-                        _cells.append(
-                            f'<div style="background:{_bg};border:1px solid '
-                            f'{"#d35400" if _is_here else "#e8c9b0"};'
-                            'border-radius:9px;padding:5px 6px;min-height:52px;'
-                            'text-align:center;">'
-                            f'<div style="font-size:1.05rem">{_emoji.get(_sp,"📍")}</div>'
-                            f'<div style="font-size:0.63rem;color:#444;'
-                            f'font-weight:{"700" if _is_here else "400"}">{_sp}'
-                            + ("<br>🐰🐤" if _is_here else "") + "</div></div>")
-                st.markdown(
-                    f'<div style="display:grid;grid-template-columns:'
-                    f'repeat({len(_icols)},1fr);gap:4px;">'
-                    + "".join(_cells) + "</div>", unsafe_allow_html=True)
+            # 방을 **실제 좌표대로** 놓는다. 이름표 여섯 개가 아니라 지도가 되게.
+            _rows = sorted({c[0] for c in _coords.values()})
+            _cols = sorted({c[1] for c in _coords.values()})
+            _grid = {(r, c): None for r in _rows for c in _cols}
+            for _r, _xy in _coords.items():
+                _grid[(_xy[0], _xy[1])] = _r
 
-                if _seen:
-                    st.caption("　다녀온 곳: " + " → ".join(_seen))
-                _lt = _now.get("last_talk")
-                if _lt:
-                    st.caption(f"　🐰 {(_lt.get('molang') or '')[:52]}")
-                    st.caption(f"　🐤 {(_lt.get('piupiu') or '')[:52]}")
-            if _trips:
-                _last = _trips[-1]
-                st.caption(f"{len(_trips)}번 다녀옴 · 마지막은 **{_last['where']}**"
-                           f" ({_last.get('by','')})")
-            _want = sorted(_long.items(), key=lambda kv: -kv[1])[:2]
-            for _n, _v in _want:
-                if _v <= 0:
-                    continue
-                _bar = "█" * max(1, int(10 * min(1.0, _v / 1.0)))
-                st.caption(f"　{_n} 가고 싶음 {_bar} {_v:.2f}")
-            _photos = (_tt.get("photos") or [])[::-1]
-            if _photos:
-                with st.expander(f"📷 사진 {len(_photos)}장"):
-                    for _p in _photos[:8]:
-                        st.caption("　" + _tvm.photo_line(_p))
-            _souv = (_tt.get("souvenirs") or [])[::-1]
-            if _souv:
-                st.caption("🎁 " + " · ".join(
-                    f"{s['name']}({s['from']})" for s in _souv[:4]))
-    except Exception:
-        pass
+            _cells = []
+            for _r in _rows:
+                for _c in _cols:
+                    _room = _grid.get((_r, _c))
+                    if not _room:
+                        _cells.append('<div style="min-height:70px"></div>')
+                        continue
+                    _who = "".join(("🐰" if k == "molang" else "🐤")
+                                   for k, v in _where.items() if v == _room)
+                    _items = [o.get("name") for o in (_objs.get(_room) or [])][-3:]
+                    _warm = 0.10 + 0.55 * (_visits.get(_room, 0) / _mx)
+                    _sm = _home.stim(_room)
+                    _cells.append(
+                        f'<div style="background:rgba(254,240,27,{_warm:.2f});'
+                        'border:1px solid #cfcfcf;border-radius:10px;padding:6px 7px;'
+                        'min-height:70px;">'
+                        f'<div style="font-size:0.75rem;font-weight:700;color:#333;">'
+                        f'{_room} <span style="float:right">{_who}</span></div>'
+                        f'<div style="font-size:0.62rem;color:#888;">'
+                        f'{"☀️" if _sm["lift"] > 0.65 else "🌙" if _sm["lift"] < 0.45 else "·"}'
+                        f'{" 🔇" if _sm["quiet"] else ""}</div>'
+                        f'<div style="font-size:0.66rem;color:#666;line-height:1.3;">'
+                        + ("<br>".join("· " + str(i)[:9] for i in _items)
+                           if _items else "")
+                        + "</div></div>")
+            st.markdown(
+                f'<div style="display:grid;grid-template-columns:repeat({len(_cols)},1fr);'
+                'gap:5px;">' + "".join(_cells) + "</div>", unsafe_allow_html=True)
 
-    # 🏠 둘의 집과 바깥 — 어디에 있고, 무엇을 놓아뒀고, 무엇이 바뀌었나
-    try:
-        import home as _home
-        import land as _land
-        _h = _home.load(sb)
-        _ld = _land.load(sb)
-        _where = _h.get("where") or {}
-        _objs = _h.get("objects") or {}
-        _visits = _h.get("visits") or {}
-        _mx = max(1, max(_visits.values()) if _visits else 1)
-        _coords = _home.layout()["coords"]
+            _same = len(set(_where.values())) == 1 and len(_where) > 1
+            st.caption("🐰🐤 같은 방에 있어요" if _same else
+                       f"🐰 {_where.get('molang','?')} · 🐤 {_where.get('piupiu','?')}")
 
-        st.markdown("---")
-        st.markdown("### 🏠 둘의 집")
-
-        # 방을 **실제 좌표대로** 놓는다. 이름표 여섯 개가 아니라 지도가 되게.
-        _rows = sorted({c[0] for c in _coords.values()})
-        _cols = sorted({c[1] for c in _coords.values()})
-        _grid = {(r, c): None for r in _rows for c in _cols}
-        for _r, _xy in _coords.items():
-            _grid[(_xy[0], _xy[1])] = _r
-
-        _cells = []
-        for _r in _rows:
-            for _c in _cols:
-                _room = _grid.get((_r, _c))
-                if not _room:
-                    _cells.append('<div style="min-height:70px"></div>')
-                    continue
-                _who = "".join(("🐰" if k == "molang" else "🐤")
-                               for k, v in _where.items() if v == _room)
-                _items = [o.get("name") for o in (_objs.get(_room) or [])][-3:]
-                _warm = 0.10 + 0.55 * (_visits.get(_room, 0) / _mx)
-                _sm = _home.stim(_room)
-                _cells.append(
-                    f'<div style="background:rgba(254,240,27,{_warm:.2f});'
-                    'border:1px solid #cfcfcf;border-radius:10px;padding:6px 7px;'
-                    'min-height:70px;">'
-                    f'<div style="font-size:0.75rem;font-weight:700;color:#333;">'
-                    f'{_room} <span style="float:right">{_who}</span></div>'
-                    f'<div style="font-size:0.62rem;color:#888;">'
-                    f'{"☀️" if _sm["lift"] > 0.65 else "🌙" if _sm["lift"] < 0.45 else "·"}'
-                    f'{" 🔇" if _sm["quiet"] else ""}</div>'
-                    f'<div style="font-size:0.66rem;color:#666;line-height:1.3;">'
-                    + ("<br>".join("· " + str(i)[:9] for i in _items)
-                       if _items else "")
-                    + "</div></div>")
-        st.markdown(
-            f'<div style="display:grid;grid-template-columns:repeat({len(_cols)},1fr);'
-            'gap:5px;">' + "".join(_cells) + "</div>", unsafe_allow_html=True)
-
-        _same = len(set(_where.values())) == 1 and len(_where) > 1
-        st.caption("🐰🐤 같은 방에 있어요" if _same else
-                   f"🐰 {_where.get('molang','?')} · 🐤 {_where.get('piupiu','?')}")
-
-        # 바깥 — 집에서 얼마나 먼지, 가봤는지
-        _places = _ld.get("places") or []
-        if _places:
-            _lv = _ld.get("visits") or {}
-            _icon = {"바다": "🌊", "산": "⛰️", "숲": "🌲",
-                     "마을": "🏘️", "들판": "🌾", "물가": "💧"}
-            st.markdown("#### 🧭 바깥")
-            for _p in sorted(_places, key=lambda x: x["dist"]):
-                _n = _lv.get(_p["kind"], 0)
-                _bar = "─" * int(min(10, _p["dist"]))
-                st.caption(
-                    f"🏠{_bar}{_icon.get(_p['kind'],'📍')} **{_p['kind']}** "
-                    f"· {_p['dist']}만큼 멀리 · "
-                    + (f"{_n}번 다녀옴" if _n else "아직 못 가봄")
-                    + (f" · {', '.join(_p.get('from', [])[:2])}에서 생김"
-                       if _p.get("from") else ""))
-
-        _log = (_h.get("log") or [])[-6:][::-1]
-        _llog = (_ld.get("log") or [])[-4:][::-1]
-        if _log or _llog:
-            with st.expander(f"🔨 바뀐 자취 {len(_h.get('log') or []) + len(_ld.get('log') or [])}"):
-                for _e in _llog:
-                    st.caption(f"🧭 {_e.get('kind')} — {_e.get('what')}"
-                               + ("(처음)" if _e.get("first") else ""))
-                for _e in _log:
-                    _wh = "🐰" if _e.get("who") == "molang" else "🐤"
-                    if _e.get("what") == "옮김":
-                        st.caption(f"{_wh} {_e.get('item')} 를 "
-                                   f"{_e.get('from')} → {_e.get('to')}")
-                    else:
-                        st.caption(f"{_wh} {_e.get('room')}에 "
-                                   f"{_e.get('item')} 를 놓았어요")
-
-        # 커지면 한눈에 — 별도 탭처럼 펼쳐 보는 자리
-        st.session_state["_world"] = {"home": _h, "land": _ld,
-                                      "coords": _coords}
-    except Exception as _e:
-        st.caption(f"집을 못 불러왔어요: {str(_e)[:60]}")
-
-    # 피우피우 — 사용자와 직접 말하지 않는다. 몰랑이가 전할 뿐.
-    try:
-        import piupiu
-        _pt = (sb.table("molang_peer_talks").select("*")
-               .order("id", desc=True).limit(3).execute().data) or []
-        if _pt:
-            with st.expander(f"🐤 피우피우와 나눈 이야기 {len(_pt)}"):
-                for _t in _pt:
-                    st.caption(f"**{_t.get('topic')}**")
-                    st.caption(f"　🐰 {(_t.get('molang') or '')[:70]}")
-                    st.caption(f"　🐤 {(_t.get('piupiu') or '')[:70]}")
-    except Exception:
-        pass
-
-    # 🕸️ 기억 지도 — 무엇이 무엇에 끌리는지, 무엇이 아직 엉켜 있는지
-    try:
-        import semantic_map as _sm
-        import word_gravity as _wgv
-        _gm, _gcl = _sm.load(sb)
-        if _gm.get("edges"):
-            _mass = _gm.get("mass") or {}
-            st.markdown("---")
-            st.markdown("### 🕸️ 기억 지도")
-            st.caption(f"마디 {len(_gm.get('freq') or {})}개 · "
-                       f"실 {len(_gm.get('edges') or {})}개 · "
-                       f"갈래 {len(_gcl)}개")
-
-            # 무거운 낱말 = 친숙한 것
-            _heavy = sorted(((w, m) for w, m in _mass.items() if m > 0),
-                            key=lambda kv: -kv[1])[:8]
-            if _heavy:
-                st.caption("**친숙한 것** · " +
-                           " · ".join(f"{w}({m:.1f})" for w, m in _heavy))
-
-            # 한 낱말이 어디로 끌리는지 직접 보기
-            _pick = st.selectbox(
-                "무엇이 어디로 끌리는지 보기",
-                [w for w, _ in _heavy] + [w for w in (_gm.get("freq") or {})
-                                          if w not in dict(_heavy)][:40],
-                key=uk("grav_pick"))
-            if _pick:
-                _att = _wgv.attracted(_gm, _mass, _pick, 6)
-                if _att:
-                    _mx = max(p for _, p in _att) or 1
-                    for _n, _p in _att:
-                        _bar = "█" * max(1, int(10 * _p / _mx))
-                        st.caption(f"　{_pick} → **{_n}** {_bar} {_p:.2f}")
-                else:
-                    st.caption("　아직 끌리는 데가 없어요")
-                _h = _wgv.home_branch(_gm, _mass, _gcl, _pick)
-                if _h.get("branch"):
+            # 바깥 — 집에서 얼마나 먼지, 가봤는지
+            _places = _ld.get("places") or []
+            if _places:
+                _lv = _ld.get("visits") or {}
+                _icon = {"바다": "🌊", "산": "⛰️", "숲": "🌲",
+                         "마을": "🏘️", "들판": "🌾", "물가": "💧"}
+                st.markdown("#### 🧭 바깥")
+                for _p in sorted(_places, key=lambda x: x["dist"]):
+                    _n = _lv.get(_p["kind"], 0)
+                    _bar = "─" * int(min(10, _p["dist"]))
                     st.caption(
-                        f"　제 자리: **{_h['branch']}** ({_h['score']:.1f})"
-                        + ("" if _h["settled"] else
-                           " ← 아직 " + ", ".join(r[0] for r in _h["rivals"])
-                           + " 사이에서 흔들림"))
+                        f"🏠{_bar}{_icon.get(_p['kind'],'📍')} **{_p['kind']}** "
+                        f"· {_p['dist']}만큼 멀리 · "
+                        + (f"{_n}번 다녀옴" if _n else "아직 못 가봄")
+                        + (f" · {', '.join(_p.get('from', [])[:2])}에서 생김"
+                           if _p.get("from") else ""))
 
-            # 갈래와 확신
-            with st.expander(f"갈래 {len(_gcl)}개"):
-                for _c in _gcl[:12]:
-                    _conf = _c.get("confidence", 0)
-                    _mark = ("🔴" if _c.get("unsure") else
-                             "🟡" if _conf < 0.6 else "🟢")
-                    st.caption(f"{_mark} **{_c['name']}** ({_c['size']}개, "
-                               f"확신 {_conf:.2f})"
-                               + (f" ← {_c['from']}에서 갈라짐"
-                                  if _c.get("from") else ""))
-                    st.caption("　" + ", ".join(_c["members"][:8]))
-    except Exception as _e:
-        st.caption(f"지도를 못 불러왔어요: {str(_e)[:50]}")
+            _log = (_h.get("log") or [])[-6:][::-1]
+            _llog = (_ld.get("log") or [])[-4:][::-1]
+            if _log or _llog:
+                with st.expander(f"🔨 바뀐 자취 {len(_h.get('log') or []) + len(_ld.get('log') or [])}"):
+                    for _e in _llog:
+                        st.caption(f"🧭 {_e.get('kind')} — {_e.get('what')}"
+                                   + ("(처음)" if _e.get("first") else ""))
+                    for _e in _log:
+                        _wh = "🐰" if _e.get("who") == "molang" else "🐤"
+                        if _e.get("what") == "옮김":
+                            st.caption(f"{_wh} {_e.get('item')} 를 "
+                                       f"{_e.get('from')} → {_e.get('to')}")
+                        else:
+                            st.caption(f"{_wh} {_e.get('room')}에 "
+                                       f"{_e.get('item')} 를 놓았어요")
 
-    # 목적 제안 — 몰랑이가 "이걸 목적으로 삼아도 될까?" 하고 물어온 것
-    try:
-        # sent_at 은 '말을 걸었나'이지 '결정했나'가 아니다.
-        # 결정 여부는 error(거절) / molang_purposes(승인) 로 판단한다.
-        _props = (sb.table("molang_outbox")
-                  .select("id,body,rule,payload,created_at")
-                  .in_("rule", ["purpose_sub", "purpose_core"])
-                  .is_("error", "null")
-                  .order("id", desc=True).limit(6).execute().data) or []
-        _done = {p.get("purpose") for p in purpose_growth.load_subs(sb, False)}
-        _props = [p for p in _props
-                  if (p.get("payload") or {}).get("purpose") not in _done][:3]
-    except Exception:
-        _props = []
-    if _props:
-        st.markdown("---")
-        st.markdown("### 🎯 목적 제안")
+            # 커지면 한눈에 — 별도 탭처럼 펼쳐 보는 자리
+            st.session_state["_world"] = {"home": _h, "land": _ld,
+                                          "coords": _coords}
+        except Exception as _e:
+            st.caption(f"집을 못 불러왔어요: {str(_e)[:60]}")
+
+        # 피우피우 — 사용자와 직접 말하지 않는다. 몰랑이가 전할 뿐.
+        try:
+            import piupiu
+            _pt = (sb.table("molang_peer_talks").select("*")
+                   .order("id", desc=True).limit(3).execute().data) or []
+            if _pt:
+                with st.expander(f"🐤 피우피우와 나눈 이야기 {len(_pt)}"):
+                    for _t in _pt:
+                        st.caption(f"**{_t.get('topic')}**")
+                        st.caption(f"　🐰 {(_t.get('molang') or '')[:70]}")
+                        st.caption(f"　🐤 {(_t.get('piupiu') or '')[:70]}")
+        except Exception:
+            pass
+
+    with _t_mind:
+        # 🕸️ 기억 지도 — 무엇이 무엇에 끌리는지, 무엇이 아직 엉켜 있는지
+        try:
+            import semantic_map as _sm
+            import word_gravity as _wgv
+            _gm, _gcl = _sm.load(sb)
+            if _gm.get("edges"):
+                _mass = _gm.get("mass") or {}
+                st.markdown("---")
+                st.markdown("### 🕸️ 기억 지도")
+                st.caption(f"마디 {len(_gm.get('freq') or {})}개 · "
+                           f"실 {len(_gm.get('edges') or {})}개 · "
+                           f"갈래 {len(_gcl)}개")
+
+                # 무거운 낱말 = 친숙한 것
+                _heavy = sorted(((w, m) for w, m in _mass.items() if m > 0),
+                                key=lambda kv: -kv[1])[:8]
+                if _heavy:
+                    st.caption("**친숙한 것** · " +
+                               " · ".join(f"{w}({m:.1f})" for w, m in _heavy))
+
+                # 한 낱말이 어디로 끌리는지 직접 보기
+                _pick = st.selectbox(
+                    "무엇이 어디로 끌리는지 보기",
+                    [w for w, _ in _heavy] + [w for w in (_gm.get("freq") or {})
+                                              if w not in dict(_heavy)][:40],
+                    key=uk("grav_pick"))
+                if _pick:
+                    _att = _wgv.attracted(_gm, _mass, _pick, 6)
+                    if _att:
+                        _mx = max(p for _, p in _att) or 1
+                        for _n, _p in _att:
+                            _bar = "█" * max(1, int(10 * _p / _mx))
+                            st.caption(f"　{_pick} → **{_n}** {_bar} {_p:.2f}")
+                    else:
+                        st.caption("　아직 끌리는 데가 없어요")
+                    _h = _wgv.home_branch(_gm, _mass, _gcl, _pick)
+                    if _h.get("branch"):
+                        st.caption(
+                            f"　제 자리: **{_h['branch']}** ({_h['score']:.1f})"
+                            + ("" if _h["settled"] else
+                               " ← 아직 " + ", ".join(r[0] for r in _h["rivals"])
+                               + " 사이에서 흔들림"))
+
+                # 갈래와 확신
+                with st.expander(f"갈래 {len(_gcl)}개"):
+                    for _c in _gcl[:12]:
+                        _conf = _c.get("confidence", 0)
+                        _mark = ("🔴" if _c.get("unsure") else
+                                 "🟡" if _conf < 0.6 else "🟢")
+                        st.caption(f"{_mark} **{_c['name']}** ({_c['size']}개, "
+                                   f"확신 {_conf:.2f})"
+                                   + (f" ← {_c['from']}에서 갈라짐"
+                                      if _c.get("from") else ""))
+                        st.caption("　" + ", ".join(_c["members"][:8]))
+        except Exception as _e:
+            st.caption(f"지도를 못 불러왔어요: {str(_e)[:50]}")
+
+    with _t_check:
+        # 검토 대기 — 검토함이 두 곳이다(대화에서 격리된 사실 + 워커가 찾아온 관측).
+        # 앱이 한 쪽만 읽어서 워커가 격리해도 0으로 보이던 문제를 고쳤다.
+        _cnt = review_box.counts(sb, u.identity)
+        _q = review_box.pending(sb, u.identity, 20)
+        # 호기심이 사고 구조를 얼마나 바꿨나
+        try:
+            _grown = sum(1 for t in u.registry.trees.values()
+                         for n in t.nodes if str(n).startswith("grown_"))
+            _tmem = sum(len(getattr(t, "memory", [])) for t in u.registry.trees.values())
+            _used = sum((u.registry.usage_count or {}).values())
+            st.caption(f"🌳 사고 기억 {_tmem}개 · 늘린 판단 단계 {_grown}개 · "
+                       f"트리 사용 {_used}회")
+            if st.session_state.get("_tree_save_error"):
+                st.error(f"트리 저장 실패: {st.session_state['_tree_save_error'][:80]}")
+        except Exception:
+            pass
+
+        if st.session_state.get("_guard_note"):
+            st.caption("🛑 " + st.session_state["_guard_note"])
+
+        _bump = st.session_state.get("_last_bumped")
+        if _bump:
+            st.caption(f"🌱 요즘 관심: {', '.join(_bump[:5])}")
+
+        # 목적 제안 — 몰랑이가 "이걸 목적으로 삼아도 될까?" 하고 물어온 것
+        try:
+            # sent_at 은 '말을 걸었나'이지 '결정했나'가 아니다.
+            # 결정 여부는 error(거절) / molang_purposes(승인) 로 판단한다.
+            _props = (sb.table("molang_outbox")
+                      .select("id,body,rule,payload,created_at")
+                      .in_("rule", ["purpose_sub", "purpose_core"])
+                      .is_("error", "null")
+                      .order("id", desc=True).limit(6).execute().data) or []
+            _done = {p.get("purpose") for p in purpose_growth.load_subs(sb, False)}
+            _props = [p for p in _props
+                      if (p.get("payload") or {}).get("purpose") not in _done][:3]
+        except Exception:
+            _props = []
+        if _props:
+            st.markdown("### 🎯 목적 제안")
         for _p in _props:
             _core = (_p["rule"] == "purpose_core")
             st.caption(("🌱 하위 목적" if not _core else "🧭 핵심 목적 바꾸기")
