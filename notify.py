@@ -100,10 +100,15 @@ def push_pending(sb, app_url: str = "", log=print) -> dict:
         return {"sent": 0, "why": "오늘은 충분히 말했음"}
 
     try:
-        # 아직 사람에게 안 전해진 말 (sent_at 이 비어 있는 것)
+        # **아직 알림으로 안 보낸 말.**
+        #
+        # 예전에는 sent_at 이 비어 있는 것만 봤다. 그런데 sent_at 은
+        # '앱에서 보여줬다' 는 표시이고, 알림은 그와 다른 일이다.
+        # 앱을 열어 봤든 안 봤든, 폰으로 보냈는지는 notified 가 가린다.
+        # (그 탓에 쌓인 말이 10건인데 하나도 안 나갔다)
         rows = (sb.table("molang_outbox")
                 .select("id,rule,body,created_at")
-                .is_("sent_at", "null").eq("notified", False)
+                .eq("notified", False)
                 .order("id", desc=True).limit(3).execute().data) or []
     except Exception as e:
         return {"sent": 0, "why": str(e)[:60]}
@@ -125,6 +130,30 @@ def push_pending(sb, app_url: str = "", log=print) -> dict:
            "peek": "eyes", "new_finding": "mag", "mood": "cloud",
            "reminisce": "thought_balloon",
            "waiting": "hourglass", "confirm": "question"}
+
+    # 너무 묵은 말은 이제 와서 보내지 않는다. 지금 하는 말이어야 한다.
+    def _fresh(r):
+        try:
+            from datetime import datetime, timezone
+            t = datetime.fromisoformat(
+                str(r.get("created_at") or "").replace("Z", "+00:00"))
+            if t.tzinfo is None:
+                t = t.replace(tzinfo=timezone.utc)
+            import time as _t
+            return (_t.time() - t.timestamp()) < 86400 * 2
+        except Exception:
+            return True
+
+    stale = [r for r in rows if not _fresh(r)]
+    rows = [r for r in rows if _fresh(r)]
+    for r in stale:          # 묵은 것은 보내지 않되 다시 안 보게 표시
+        try:
+            sb.table("molang_outbox").update(
+                {"notified": True}).eq("id", r["id"]).execute()
+        except Exception:
+            pass
+    if not rows:
+        return {"sent": 0, "why": "전할 말이 없음(묵은 것은 건너뜀)"}
 
     done = []
     for r in rows:
