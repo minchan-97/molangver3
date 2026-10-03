@@ -416,6 +416,12 @@ def main(mode):
             except Exception as e:
                 out['map'] = {'error': str(e)[:120]}
 
+            try:    # 확신은 굳기만 하지 않는다 — 묵은 것은 옅어진다
+                import belief_decay as _bd
+                out['fade'] = _bd.sweep(store.sb)
+            except Exception as e:
+                out['fade'] = {'error': str(e)[:100]}
+
             try:        # 낮에 못 다룬 것이 겹쳐 꿈이 된다 (사실이 되지는 않는다)
                 import dream as _dream
                 from molang_store import SupabaseIdentity
