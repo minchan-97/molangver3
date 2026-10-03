@@ -86,6 +86,33 @@ SINGLE = re.compile(
     r"직업은|전공은|다니는)")
 
 
+# 서로 반대인 말 — 같은 대상에 대해 이러면 모순이다.
+# "겁이 많다" 와 "겁이 많지 않다" 는 둘 다 참일 수 없다.
+OPPOSITE = [
+    (re.compile(r"(겁이 많|무서워하|두려워하)(?!지 않|지는 않)"),
+     re.compile(r"(겁이 많지 않|무서워하지 않|안 무서워|두려워하지 않)")),
+    (re.compile(r"좋아한(?!다고|지 않)"), re.compile(r"(좋아하지 않|싫어한)")),
+    (re.compile(r"관심이 (많|있)"), re.compile(r"관심이 (없|적)")),
+    (re.compile(r"(잘 안|모른)"), re.compile(r"(잘 알|안다)")),
+]
+
+
+def _subject(text: str) -> str:
+    """누구에 대한 말인가 — 첫 이름."""
+    m = re.match(r"\s*([가-힣A-Za-z]{2,10})(?:은|는|이|가|도)\s", text or "")
+    return m.group(1) if m else ""
+
+
+def _opposed(a: str, b: str) -> bool:
+    """같은 대상에 대해 정반대로 말하는가."""
+    if _subject(a) != _subject(b) or not _subject(a):
+        return False
+    for pos, neg in OPPOSITE:
+        if (pos.search(a) and neg.search(b)) or (neg.search(a) and pos.search(b)):
+            return True
+    return False
+
+
 def conflicts(new_text: str, facts: list, min_overlap=2) -> list:
     """
     새로 들어온 것과 **정말로** 부딪히는 기존 사실들.
@@ -100,13 +127,24 @@ def conflicts(new_text: str, facts: list, min_overlap=2) -> list:
     nw = set(TOKEN.findall(new_text or ""))
     if len(nw) < min_overlap:
         return []
-    # 여럿일 수 있는 말이면 애초에 모순을 따지지 않는다
+
+    out = []
+    # 1) 같은 대상에 대해 **정반대로** 말하는 것은 언제나 모순이다.
+    #    ("피우피우가 겁이 많다" ↔ "피우피우가 겁이 많지 않다")
+    for f in facts:
+        if _opposed(new_text or "", f.get("text", "")):
+            out.append({"id": f.get("id"), "text": f.get("text", ""),
+                        "shared": ["반대"], "strength": f.get("strength")})
+    if out:
+        return out
+
+    # 2) 그 밖에는 **하나뿐인 서술**일 때만 따진다.
+    #    "바다를 무서워한다" 와 "곤충을 무서워한다" 는 둘 다 참일 수 있다.
     if MULTI.search(new_text or "") and not SINGLE.search(new_text or ""):
         return []
     if not SINGLE.search(new_text or ""):
         return []
 
-    out = []
     for f in facts:
         t = f.get("text", "")
         if not SINGLE.search(t):
