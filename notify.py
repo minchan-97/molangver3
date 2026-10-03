@@ -118,10 +118,13 @@ def push_pending(sb, app_url: str = "", log=print) -> dict:
              "peek": "🐰 밖이 궁금해",
              "reminisce": "🐰 문득 생각났는데",
              "grew": "🐰 생각이 조금 달라졌어",
-             "absence": "🐰 오늘은 어땠어?"}
+             "absence": "🐰 오늘은 어땠어?",
+             "waiting": "🐰 그거 어떻게 됐어?",
+             "confirm": "🐰 이거 맞아?"}
     TAG = {"peer": "hatching_chick", "dream": "crescent_moon",
            "peek": "eyes", "new_finding": "mag", "mood": "cloud",
-           "reminisce": "thought_balloon"}
+           "reminisce": "thought_balloon",
+           "waiting": "hourglass", "confirm": "question"}
 
     done = []
     for r in rows:
