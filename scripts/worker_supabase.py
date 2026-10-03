@@ -416,6 +416,16 @@ def main(mode):
                                api_key=os.environ.get('OPENAI_API_KEY'),
                                state=state)
             out['nudge'] = _msg or '계기 없음'
+
+            # 하고 싶은 말이 앱 밖으로도 닿게.
+            # 앱을 안 열면 이 아이 말이 아무 데도 안 간다.
+            try:
+                import notify as _nt
+                if _nt.available():
+                    out['notify'] = _nt.push_pending(
+                        store.sb, app_url=os.environ.get('APP_URL', ''))
+            except Exception as _ne:
+                out['notify'] = {'error': str(_ne)[:80]}
         except Exception as e:
             out['nudge'] = {'error': str(e)[:200],
                             'where': _where(), 'type': type(e).__name__}
