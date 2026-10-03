@@ -215,17 +215,25 @@ with st.sidebar:
                 _tr = _parsed.get("trees") or {}
                 if _tr:
                     _miss = [k for k in _tr if k not in u.registry.trees]
+                    # 기억이 비어 있는데 기록에는 있는 것도 되돌릴 거리다
+                    _thin = [k for k, v in _tr.items()
+                             if k in u.registry.trees and v.get("memory")
+                             and not getattr(u.registry.trees[k], "memory", None)]
+                    _todo = len(_miss) + len(_thin)
                     st.caption(f"🌳 기록에 든 사고 유형 {len(_tr)}개 "
-                               + (f"· 지금 없는 것 **{len(_miss)}개**"
-                                  if _miss else "· 모두 서버에 있음"))
-                    if _miss and safe(st.button,
-                                      f"사고 유형 {len(_miss)}개 되돌리기",
+                               + (f"· 되돌릴 것 **{_todo}개**"
+                                  + (f" (유형 {len(_miss)} · 기억만 {len(_thin)})"
+                                     if _miss and _thin else "")
+                                  if _todo else "· 모두 서버에 있음"))
+                    if _todo and safe(st.button,
+                                      f"사고 유형 {_todo}개 되돌리기",
                                       key=uk("mig_trees")):
                         try:
                             _r = legacy_import.restore_trees(sb, _parsed)
-                            if _r.get("restored"):
+                            if _r.get("restored") or _r.get("filled"):
                                 st.success(
-                                    f"사고 유형 {_r['restored']}개를 되돌렸어요 "
+                                    f"사고 유형 {_r.get('restored', 0)}개를 되돌리고 "
+                                    f"기억 {_r.get('filled', 0)}개를 채웠어요 "
                                     f"({_r['before']} → {_r['now']}개). "
                                     "복구 기록이 남아 자생과 구분됩니다.")
                                 st.rerun()
