@@ -1,0 +1,50 @@
+# 쓰는 법
+#   1. 몰랑이57.pkl 을 저장소 맨 위(루트)에 올린다
+#   2. 이 파일을 .github/workflows/restore_trees.yml 로 올린다
+#   3. GitHub → Actions → "사고 유형 되살리기" → Run workflow
+#      - 먼저 write 를 false 로 두고 돌려 **미리보기**를 본다 (18개 목록)
+#      - 맞으면 write 를 true 로 다시 돌린다
+#   4. 끝나면 이 파일과 pkl 을 지운다
+#
+# 왜 필요한가
+#   PathRecord 에 필드를 더한 뒤 옛 경로 기록에서 복원이 터지면서
+#   트리가 통째로 버려졌다 (41개 → 23개). 사라진 18개는 전부 대화에서
+#   자란 유형이고, pkl 에는 그대로 남아 있다.
+
+name: 사고 유형 되살리기
+
+on:
+  workflow_dispatch:
+    inputs:
+      pkl:
+        description: "되살릴 성장 기록 파일 (저장소 루트 기준)"
+        required: true
+        default: "몰랑이57.pkl"
+      write:
+        description: "실제로 저장할까? (false = 미리보기만)"
+        required: true
+        default: "false"
+
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 라이브러리 설치
+        run: pip install -q supabase numpy
+
+      - name: 미리보기 / 복원
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          if [ "${{ inputs.write }}" = "true" ]; then
+            python scripts/restore_trees.py "${{ inputs.pkl }}" --write
+          else
+            python scripts/restore_trees.py "${{ inputs.pkl }}"
+          fi
