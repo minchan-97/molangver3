@@ -210,6 +210,18 @@ class SupabaseIdentity:
         except Exception:
             pool = self._facts
 
+        # **꺼내 쓴 것은 다시 굳는다.**
+        # 옅어지기만 하고 굳는 길이 없으면 오래 둔 기억은 모두 흐려진다.
+        # 실제로 대화에 들어간 것만, 그리고 이미 흐려진 것만 올린다.
+        try:
+            import belief_decay as _bd
+            _used = [f for f in pool[:8]
+                     if 0.2 < float(f.get("strength") or 0) < 1.0]
+            if _used:
+                _bd.touch(self.sb, _used)
+        except Exception:
+            pass
+
 
         items = []
         for f in pool:
