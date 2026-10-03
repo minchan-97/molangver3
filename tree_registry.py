@@ -209,7 +209,11 @@ class TreeRegistry:
         늘기만 하고 줄지 않으면 그건 성장이 아니라 비대다.
         기본 20종과 최근에 만든 것은 건드리지 않는다.
         """
-        auto = [c["type_id"] for c in self.creation_log if not c.get("skipped")]
+        # creation_log 에는 유형 생성 말고도 복구 기록(restored, paths_restored)
+        # 같은 것이 섞인다. 그런 항목에는 type_id 가 없다.
+        # 예전에는 c["type_id"] 로 바로 꺼내서 KeyError 로 회차가 통째로 멈췄다.
+        auto = [c["type_id"] for c in self.creation_log
+                if c.get("type_id") and not c.get("skipped")]
         protect = set(auto[-keep_recent:])
         gone = []
         # 유형이 많아질수록 경로가 흩어져 '깊어지기'가 영영 안 일어난다.
