@@ -82,21 +82,47 @@ def load_into(sb, registry: TreeRegistry) -> int:
     except Exception:
         return 0
 
+    # 필드가 안 맞아도 트리를 통째로 버리지 않는다.
+    #
+    # PathRecord 에 at_probs·seed 를 더한 뒤, 그 필드가 없는 옛 기록에서
+    # PathRecord(**r) 이 터지면서 **트리 18개가 조용히 사라진 일**이 있었다
+    # (41개 → 23개. 남은 23개는 logic_db 기본형뿐이었다).
+    # 기록 하나가 깨졌다고 그 트리의 사고 구조까지 버릴 이유는 없다.
+    import dataclasses as _dc
+    _fields = {f.name for f in _dc.fields(PathRecord)}
+
+    def _rec(d):
+        try:
+            return PathRecord(**{k: v for k, v in d.items() if k in _fields})
+        except Exception:
+            return None
+
     n = 0
+    skipped_hist = 0
     for tid, tb in (blob.get("trees") or {}).items():
         try:                      # TreeRegistry.load() 의 복원 절차와 같게
-            t = ThoughtStructure(learning_rate=tb["lr"],
-                                 continuity=tb["continuity"])
-            for k, v in tb["nodes"].items():
-                t.nodes[k] = JudgmentNode(**v)
-            t.transitions = tb["transitions"]
-            t.root_id = tb["root_id"]
-            t.history = [PathRecord(**r) for r in tb.get("history", [])]
+            t = ThoughtStructure(learning_rate=tb.get("lr", 0.1),
+                                 continuity=tb.get("continuity", 0.5))
+            for k, v in (tb.get("nodes") or {}).items():
+                try:
+                    t.nodes[k] = JudgmentNode(**v)
+                except Exception:
+                    continue
+            t.transitions = tb.get("transitions") or {}
+            t.root_id = tb.get("root_id")
+            hist = [_rec(x) for x in (tb.get("history") or [])]
+            skipped_hist += sum(1 for x in hist if x is None)
+            t.history = [x for x in hist if x is not None]
             t.memory = tb.get("memory", [])
+            if not t.nodes:          # 노드가 하나도 없으면 트리가 아니다
+                continue
             registry.trees[tid] = t
             n += 1
-        except Exception:
+        except Exception as e:
+            print(f"  ⚠️ 트리 '{tid}' 복원 실패: {str(e)[:60]}")
             continue
+    if skipped_hist:
+        print(f"  (옛 형식 경로 기록 {skipped_hist}건은 건너뜀 — 트리는 살림)")
     if blob.get("type_examples"):
         registry.type_examples = blob["type_examples"]
     if blob.get("usage_count"):
