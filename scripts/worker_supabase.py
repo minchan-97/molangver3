@@ -239,6 +239,40 @@ def main(mode):
                     _tv.save(store.sb, _t)
                 except Exception as e:
                     out['travel'] = {'error': str(e)[:120]}
+                # 마을 — 이웃들이 자기 자리에서 움직인다.
+                # 집(home)은 몰랑이네 안이고, 마을은 그 바깥이다.
+                try:
+                    import village as _vg, villagers as _vp
+                    _vil = _vg.load(store.sb)
+                    _vg.ensure_homes(store.sb, _vil)
+                    _who = _vp.load(store.sb)
+                    for _v in _who.values():
+                        _vp.tick(_v)
+                    _vp.walk(store.sb, _who, _vil)
+                    # 함께 쌓은 관심이 장소를 만든다
+                    _born = _vg.maybe_grow(
+                        store.sb, _vil,
+                        [state.interests] + [x.get('interests') for x in _who.values()])
+                    _vg.save(store.sb, _vil)
+                    _vp.save(store.sb, _who)
+                    # 몰랑이네에 누가 와 있으면 한 마디 나눈다
+                    _talked = None
+                    _at_home = _vp.who_is_at(_who, '몰랑이네')
+                    if _at_home and state.last_topic:
+                        import random as _r3
+                        from molang_store import SupabaseIdentity as _SI3
+                        _talked = _vp.chat(
+                            store.sb, _who, _r3.choice(_at_home),
+                            _SI3(store.sb), state.last_topic,
+                            api_key=os.environ.get('OPENAI_API_KEY'))
+                        _vp.save(store.sb, _who)
+                    out['village'] = {
+                        'places': len(_vil.get('places') or {}),
+                        'born': _born, 'talked': _talked,
+                        'where': {k: v.get('where') for k, v in _who.items()}}
+                except Exception as e:
+                    out['village'] = {'error': str(e)[:100]}
+
                 # 집에서 한 회차 — 다만 여행 중이면 집에 없다
                 try:
                     import home as _home, travel as _tvchk
