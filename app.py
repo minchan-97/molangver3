@@ -286,6 +286,37 @@ with st.sidebar:
                     except Exception as e:
                         st.error(f"옮기기 실패: {e}")
 
+    # 🪞 내다보기 — 이 아이가 바깥을 궁금해할 때만 카메라가 뜬다.
+    # 늘 켜져 있는 눈이 아니라, 궁금할 때 묻고 사람이 보여주는 창이다.
+    try:
+        _peeks = [p for p in outbox.pending(sb, limit=5)
+                  if p.get("rule") == "peek"]
+        if _peeks:
+            st.markdown("---")
+            st.markdown("### 🪞 밖이 궁금한가 봐요")
+            st.caption("🐰 " + (_peeks[0].get("body") or "지금 거기 어때?"))
+            _c1, _c2 = st.columns(2)
+            with _c1:
+                _shot = safe(st.camera_input, "📷 보여주기",
+                             key=uk("peek_cam"))
+                if _shot is not None:
+                    st.session_state["peek_photo"] = _shot.getvalue()
+                    st.session_state["peek_id"] = _peeks[0].get("id")
+                    st.caption("보여줬어요.")
+            with _c2:
+                # 녹음은 사람이 눌러야 켜진다 — 늘 듣는 귀가 되지 않는다
+                _snd = None
+                try:
+                    _snd = st.audio_input("🎤 들려주기", key=uk("peek_mic"))
+                except Exception:
+                    st.caption("(이 판에서는 녹음을 쓸 수 없어요)")
+                if _snd is not None:
+                    st.session_state["peek_sound"] = _snd.getvalue()
+                    st.session_state["peek_id"] = _peeks[0].get("id")
+                    st.caption("들려줬어요.")
+    except Exception:
+        pass
+
     # 검토 대기 — 검토함이 두 곳이다(대화에서 격리된 사실 + 워커가 찾아온 관측).
     # 앱이 한 쪽만 읽어서 워커가 격리해도 0으로 보이던 문제를 고쳤다.
     _cnt = review_box.counts(sb, u.identity)
@@ -838,6 +869,46 @@ photo = st.file_uploader("📷 사진 보여주기",
     key=f"ph_{st.session_state.photo_key}")
 msg = st.chat_input("몰랑이한테 말 걸기...")
 
+# 🪞 내다보기로 보여준 사진이 있으면 그것이 이번 입력이 된다.
+# (사이드바에서 찍은 것이 대화로 이어져야 기억이 된다)
+class _Shot:
+    def __init__(self, raw): self._raw = raw; self.name = "peek.jpg"
+    def getvalue(self): return self._raw
+    def read(self): return self._raw
+
+# 🎤 들려준 소리 — 글로 옮겨 대화에 넣는다.
+# 들은 것은 사실로 바로 넣지 않고 확인 거리로 보낸다
+# (곁에 있던 사람의 말이 섞일 수 있다).
+heard = ""
+if st.session_state.get("peek_sound"):
+    try:
+        import listening
+        _raw = st.session_state.pop("peek_sound")
+        _r = listening.transcribe(_raw, st.session_state.api_key)
+        if _r.get("ok"):
+            heard = _r["text"]
+            listening.to_quarantine(sb, heard, "소리로 들은 것")
+            if not msg:
+                msg = "(지금 여기 소리를 들려줬어)"
+        else:
+            st.caption(f"못 들었어요: {_r.get('why')}")
+        _pid = st.session_state.pop("peek_id", None)
+        if _pid:
+            outbox.mark_sent(sb, [_pid])
+    except Exception as _e:
+        st.caption(f"듣기 실패: {str(_e)[:60]}")
+
+if photo is None and st.session_state.get("peek_photo"):
+    photo = _Shot(st.session_state.pop("peek_photo"))
+    if not msg:
+        msg = "(궁금해해서 지금 여기를 보여줬어)"
+    try:
+        _pid = st.session_state.pop("peek_id", None)
+        if _pid:
+            outbox.mark_sent(sb, [_pid])
+    except Exception:
+        pass
+
 # 이미 처리한 입력인지 체크 (사진 무한 반응 방지)
 if msg or photo:
     show = msg or "(사진을 보냈어요 📷)"
@@ -914,6 +985,15 @@ if msg or photo:
         except Exception:
             map_ctx = ""
 
+        # 들려준 소리가 있으면 그것부터
+        heard_ctx = ""
+        try:
+            if heard:
+                import listening as _ls
+                heard_ctx = _ls.context_line(heard)
+        except Exception:
+            heard_ctx = ""
+
         # 여행 — 다녀온 곳, 그리고 사진 한 장
         travel_ctx = ""
         try:
@@ -965,7 +1045,7 @@ if msg or photo:
             pb = base64.b64encode(photo.getvalue()).decode()
             try:
                 r = client.chat.completions.create(model="gpt-4o",
-                    messages=[{"role":"system","content":u.identity.to_system_prompt(question=q)+"\n"+self_ctx+"\n"+place_ctx+"\n"+time_ctx+"\n"+travel_ctx+"\n"+purpose_ctx+"\n"+guard_ctx
+                    messages=[{"role":"system","content":u.identity.to_system_prompt(question=q)+"\n"+self_ctx+"\n"+place_ctx+"\n"+time_ctx+"\n"+heard_ctx+"\n"+travel_ctx+"\n"+purpose_ctx+"\n"+guard_ctx
                      +"\n[말투] 너는 몰랑이다. 반말로, 토끼답게, 짧고 다정하게 답한다."
                       " '저는/하시나요' 같은 존댓말을 쓰지 마라."},
                         {"role":"user","content":[
@@ -983,6 +1063,7 @@ if msg or photo:
                         "답한다. '저는/하시나요' 같은 존댓말을 쓰지 마라.\n")
             bg = self_ctx + ((" " + place_ctx) if place_ctx else "") \
                  + ((" " + time_ctx) if time_ctx else "") \
+                 + (("\n" + heard_ctx) if heard_ctx else "") \
                  + (("\n" + travel_ctx) if travel_ctx else "") \
                  + (("\n" + purpose_ctx) if purpose_ctx else "") \
                  + (("\n" + map_ctx) if map_ctx else "") \
