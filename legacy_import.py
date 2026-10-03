@@ -240,6 +240,7 @@ def restore_paths(sb, parsed: dict) -> dict:
                 t.root_id = tb.get("root_id")
                 t.memory = tb.get("memory", [])
                 t.history = []
+                # 노드가 없어도 둔다 — 경로 기록을 지키기 위해서다
                 reg.trees[tid] = t
             except Exception:
                 continue
