@@ -217,7 +217,31 @@ def collect_signals(sb, identity=None, registry=None, state=None) -> list[dict]:
     except Exception:
         pass
 
-    # 10) 오래 조용함
+    # 10) 그때 그거 어떻게 됐어? — 기억하고 기다린 것
+    try:
+        import caring as _cr
+        w = _cr.due_plan(sb)
+        if w:
+            out.append({"rule": "waiting", "weight": 3,
+                        "detail": f"며칠 전에 \"{w['text'][:50]}\" 그랬잖아. "
+                                  "그거 어떻게 됐어?",
+                        "wait_id": w["id"]})
+    except Exception:
+        pass
+
+    # 11) 이거 맞아? — 확신이 흐려진 기억을 맞춰본다
+    try:
+        import caring as _cr2
+        b = _cr2.fading_belief(sb)
+        if b:
+            out.append({"rule": "confirm", "weight": 2,
+                        "detail": f"내가 \"{b['text'][:50]}\" 라고 알고 있는데, "
+                                  "이거 맞아? 좀 흐릿해졌어.",
+                        "fact_id": b["id"]})
+    except Exception:
+        pass
+
+    # 12) 오래 조용함
     try:
         rows = (sb.table("molang_episodes").select("created_at")
                 .order("id", desc=True).limit(1).execute().data) or []
@@ -244,6 +268,8 @@ TEMPLATES = {
     "peer": "{detail}",
     "mood": "{detail}",
     "peek": "{detail}",
+    "waiting": "{detail}",
+    "confirm": "{detail}",
 }
 
 # 다듬기는 '말투만' 손대게 한다. 화자를 뒤집거나 내용을 빼면 먼저 말 걸기가
@@ -335,9 +361,15 @@ def make(sb, identity=None, registry=None, api_key=None, state=None, log=print):
     body = _polish(body, api_key, persona)
 
     try:
-        sb.table("molang_outbox").insert({
-            "body": body[:500], "rule": sig["rule"],
-            "scheduled_at": _now().isoformat()}).execute()
+        # 계기에 딸린 것(어느 기억인지, 어느 기다림인지)도 함께 남긴다.
+        # 그래야 앱에서 "맞아/아니야" 를 눌렀을 때 무엇을 고칠지 안다.
+        _extra = {k: sig[k] for k in ("wait_id", "fact_id", "talk_id")
+                  if sig.get(k) is not None}
+        _row = {"body": body[:500], "rule": sig["rule"],
+                "scheduled_at": _now().isoformat()}
+        if _extra:
+            _row["payload"] = _extra
+        sb.table("molang_outbox").insert(_row).execute()
         log(f"  먼저 말 걸기 준비: [{sig['rule']}] {body[:40]}")
     except Exception as e:
         log(f"  outbox 저장 실패: {e}")
@@ -355,7 +387,7 @@ def pending(sb, limit: int = 3) -> list[dict]:
     """앱이 열릴 때 아직 안 전한 말들. 목적 제안은 빼고."""
     try:
         rows = (sb.table("molang_outbox")
-                .select("id,body,rule,created_at")
+                .select("id,body,rule,payload,created_at")
                 .is_("sent_at", "null")
                 .order("id", desc=False).limit(limit + 4).execute().data) or []
         return [r for r in rows
