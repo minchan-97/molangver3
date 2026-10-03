@@ -296,13 +296,15 @@ with st.sidebar:
         _t_ask = _t_live = _t_mind = _t_check = st.container()
 
     with _t_ask:
-        # 💬 묻는 말 — **한 번에 하나씩.**
+        # 💬 하고 싶은 말 — **한 번에 하나씩.**
         #
-        # 궁금한 것, 기다린 것, 맞춰볼 것이 한꺼번에 뜨면 취조가 된다.
-        # 오래된 것부터 하나만 보여주고, 답하면 다음이 나온다.
+        # 이 아이가 먼저 꺼낸 말은 전부 여기 모인다.
+        # 알림으로 받은 말을 앱에서 다시 못 보면, 말을 건 쪽만 허전하다.
+        # 답할 게 있는 것(맞춰보기·내다보기·기다리기)에만 버튼이 뜨고,
+        # 나머지는 읽고 넘기면 된다.
         try:
-            _asks = [p for p in outbox.pending(sb, limit=10)
-                     if p.get("rule") in ("peek", "waiting", "confirm")]
+            _asks = [p for p in outbox.pending(sb, limit=12)
+                     if p.get("rule") not in ("purpose_sub", "purpose_core")]
             _asks.sort(key=lambda p: p.get("id") or 0)      # 오래된 것부터
             if _asks:
                 _a = _asks[0]
@@ -310,9 +312,19 @@ with st.sidebar:
                 _pay = _a.get("payload") or {}
                 _left = len(_asks) - 1
 
+                _KIND = {"peek": "👀 밖이 궁금해", "waiting": "⏳ 그거 어떻게 됐어?",
+                         "confirm": "❓ 이거 맞아?", "peer": "🐤 피우피우랑",
+                         "dream": "🌙 간밤의 꿈", "reminisce": "💭 문득 생각났는데",
+                         "new_finding": "🔎 이런 걸 찾았어",
+                         "mood": "☁️ 요즘 이래", "grew": "🌱 생각이 자랐어",
+                         "pending": "📥 확인할 게 있어",
+                         "unsure": "🤔 아직 모르겠는 게 있어",
+                         "absence": "💗 오늘은 어땠어?"}
+
                 st.markdown("---")
-                st.markdown("### 💬 물어볼 게 있대요"
+                st.markdown("### 💬 하고 싶은 말"
                             + (f"  ({_left}개 더)" if _left else ""))
+                st.caption(_KIND.get(_rule, "🐰 몰랑이"))
                 st.caption("🐰 " + (_a.get("body") or ""))
 
                 import caring as _cr
@@ -358,7 +370,7 @@ with st.sidebar:
                     if safe(st.button, "지금은 안 돼", key=uk(f"ak_s{_a.get('id')}")):
                         _done()
 
-                else:   # waiting
+                elif _rule == "waiting":
                     _c1, _c2 = st.columns(2)
                     with _c1:
                         if safe(st.button, "대답할게",
@@ -368,6 +380,11 @@ with st.sidebar:
                     with _c2:
                         if safe(st.button, "나중에", key=uk(f"ak_w{_a.get('id')}")):
                             _done()
+
+                else:
+                    # 읽고 넘기면 되는 말 (회상·꿈·피우피우·찾은 것…)
+                    if safe(st.button, "봤어", key=uk(f"ak_r{_a.get('id')}")):
+                        _done()
         except Exception:
             pass
 
