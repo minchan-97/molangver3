@@ -69,23 +69,50 @@ def faded(strength: float, source: str, last_seen: str,
     return round(max(floor, floor + (float(strength) - floor) * k), 3)
 
 
+# **여럿일 수 있는 것** — 하나로 정해지지 않는 서술.
+# "바다를 무서워한다" 와 "곤충을 무서워한다" 는 둘 다 참일 수 있다.
+# 예전에는 이런 것도 모순으로 보고 멀쩡한 기억을 깎았다.
+MULTI = re.compile(
+    r"(좋아한|싫어한|무서워한|관심|궁금|자주|가끔|때때로|보고 싶|"
+    r"듣는다|먹는다|읽는다|만든다|한다|산다|다닌다)")
+
+# **하나뿐인 것** — 바뀌면 앞의 것이 틀린 게 되는 서술.
+SINGLE = re.compile(
+    r"(이름은|나이는|사는 곳|산다|살고 있|주로|가장|제일|태어난|"
+    r"직업은|전공은|다니는)")
+
+
 def conflicts(new_text: str, facts: list, min_overlap=2) -> list:
     """
-    새로 들어온 것과 부딪히는 기존 사실들.
-    같은 것을 말하는데 **끝이 다르면** 부딪힌 것으로 본다.
-    (완벽한 판정은 못 한다. 그래서 지우지 않고 '양쪽 다 깎는다'.)
+    새로 들어온 것과 **정말로** 부딪히는 기존 사실들.
+
+    조심할 것: 여럿일 수 있는 것은 모순이 아니다.
+      "바다를 무서워한다" + "곤충을 무서워한다"  → 둘 다 참일 수 있다
+      "바다가 보이는 집에 산다" + "산이 보이는 집에 산다" → 하나만 참이다
+
+    그래서 **하나뿐인 서술**일 때만 부딪힘으로 본다. 그래도 확실하지 않으니
+    지우지 않고 양쪽 다 조금 깎는다.
     """
     nw = set(TOKEN.findall(new_text or ""))
     if len(nw) < min_overlap:
         return []
+    # 여럿일 수 있는 말이면 애초에 모순을 따지지 않는다
+    if MULTI.search(new_text or "") and not SINGLE.search(new_text or ""):
+        return []
+    if not SINGLE.search(new_text or ""):
+        return []
+
     out = []
     for f in facts:
         t = f.get("text", "")
+        if not SINGLE.search(t):
+            continue
+        if MULTI.search(t) and not SINGLE.search(t):
+            continue
         fw = set(TOKEN.findall(t))
         shared = nw & fw
         if len(shared) < min_overlap:
             continue
-        # 주어·주제는 겹치는데 서술이 다르다 → 부딪힘
         diff_new = nw - shared
         diff_old = fw - shared
         if diff_new and diff_old and not (diff_new & diff_old):
