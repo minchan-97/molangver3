@@ -38,6 +38,8 @@ DEFAULT = (60.0, 0.25)
 
 CONFLICT_CUT = 0.12       # 어긋났을 때 양쪽이 깎이는 폭
 MISS_CUT = 0.08           # 꺼내야 할 자리에서 못 꺼냈을 때
+USE_GAIN = 0.10           # 꺼내 쓰면 다시 굳는 폭
+USE_MAX = 1.0
 TOKEN = re.compile(r"[가-힣A-Za-z]{2,}")
 
 
@@ -62,6 +64,8 @@ def faded(strength: float, source: str, last_seen: str,
     """
     half, floor = BY_SOURCE.get(source or "", DEFAULT)
     days = _days_since(last_seen)
+    # 최근에 쓰였거나 일주일 안쪽이면 그대로 둔다.
+    # touch() 가 updated_at 을 갱신하므로, 자주 꺼내는 기억은 여기서 걸러진다.
     if used_recently or days < 7:
         return float(strength)
     # 반감기 곡선. 바닥까지만 내려간다.
@@ -143,6 +147,32 @@ def apply_conflict(sb, new_text: str, facts: list, log=print) -> dict:
         log("  어긋나서 확신이 내려감: "
             + " · ".join(f"{t}({s})" for t, s in done))
     return {"n": len(done), "lowered": done}
+
+
+def touch(sb, facts: list, log=None) -> int:
+    """
+    **꺼내 쓰면 다시 굳는다.**
+
+    옅어지기만 하고 굳는 길이 없으면 오래 둔 것은 모두 흐려진다.
+    사람도 자주 꺼내는 기억은 또렷해진다 — 쓰임이 곧 되새김이다.
+    (대화에 실제로 들어간 사실에만 적용한다)
+    """
+    n = 0
+    for f in (facts or [])[:12]:
+        fid = f.get("id")
+        old = float(f.get("strength") or 0)
+        if not fid or old >= USE_MAX:
+            continue
+        new = round(min(USE_MAX, old + USE_GAIN), 3)
+        try:
+            sb.table("molang_facts").update(
+                {"strength": new}).eq("id", fid).execute()
+            n += 1
+        except Exception:
+            pass
+    if n and log:
+        log(f"  꺼내 써서 다시 굳은 사실 {n}건")
+    return n
 
 
 def sweep(sb, limit=400, log=print) -> dict:
