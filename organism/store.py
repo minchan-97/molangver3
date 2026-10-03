@@ -60,6 +60,7 @@ class OrganismStore:
         s.outings = row.get('outings') or []
         s.drive = float(row.get('drive') or 0.0)
         s.obs_at_last_type = int(row.get('obs_at_last_type') or 0)
+        s.tree_count = int(row.get('tree_count') or 0)
 
         obs = self.sb.table('organism_observations') \
             .select('uid,topic,title,text,url,status,score,source_trust,'
@@ -124,6 +125,8 @@ class OrganismStore:
             extra['drive'] = float(s.drive)
         if getattr(s, 'obs_at_last_type', None) is not None:
             extra['obs_at_last_type'] = int(s.obs_at_last_type)
+        if getattr(s, 'tree_count', None) is not None:
+            extra['tree_count'] = int(s.tree_count)
         for key, cap in (('musings', 200), ('reminisced', 50),
                          ('dreams', 60), ('moods', 120), ('outings', 40)):
             v = getattr(s, key, None)
