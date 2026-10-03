@@ -174,3 +174,4 @@ def push_pending(sb, app_url: str = "", log=print) -> dict:
     if done:
         log(f"  📣 알림 {len(done)}건 보냄 ({', '.join(done)})")
     return {"sent": len(done), "rules": done}
+
