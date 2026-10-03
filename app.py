@@ -242,6 +242,31 @@ with st.sidebar:
                         except Exception as e:
                             st.error(f"되돌리기 실패: {e}")
 
+                    # 빠진 '경로 기록'만 되돌리기 — 지금 것은 그대로 둔다
+                    _lost = 0
+                    for _k, _v in _tr.items():
+                        _cur = u.registry.trees.get(_k)
+                        if _cur is None:
+                            continue
+                        _d = len(_v.get("history") or []) - len(_cur.history or [])
+                        if _d > 0:
+                            _lost += _d
+                    if _lost:
+                        st.caption(f"🧭 기록에만 있는 판단 경로 **{_lost}건** "
+                                   "(지금 트리·기억은 그대로 두고 경로만 채웁니다)")
+                        if safe(st.button, f"판단 경로 {_lost}건 되돌리기",
+                                key=uk("mig_paths")):
+                            try:
+                                _rp = legacy_import.restore_paths(sb, _parsed)
+                                if _rp.get("added"):
+                                    st.success(f"판단 경로 {_rp['added']}건을 "
+                                               "되돌렸어요.")
+                                    st.rerun()
+                                else:
+                                    st.warning(_rp.get("why") or "되돌리지 못했어요")
+                            except Exception as e:
+                                st.error(f"되돌리기 실패: {e}")
+
                 _take_p = st.checkbox("말투(페르소나)도 가져오기", value=False,
                                       key=uk("mig_persona"))
                 if safe(st.button, "서버로 옮기기", key="mig_btn"):
