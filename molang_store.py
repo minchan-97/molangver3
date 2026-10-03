@@ -261,6 +261,14 @@ class SupabaseIdentity:
         몰랑이 자기 답변을 그대로 넘긴다. 그게 오염의 직접 원인이었다.
         여기서는 is_assistant_echo()로 한 번 더 막는다.
         """
+        # "~할 거야" 는 사실이 아니라 **기다릴 거리**로 따로 적어둔다.
+        # 며칠 뒤에 어떻게 됐는지 물어보기 위해서다.
+        try:
+            import caring as _cr
+            _cr.remember_plan(self.sb, question or "", owner=self.owner)
+        except Exception:
+            pass
+
         self.sb.table('molang_episodes').insert({
             'owner': self.owner, 'place': place or getattr(self, 'place', None),
             'question': question[:2000],
