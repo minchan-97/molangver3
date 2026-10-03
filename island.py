@@ -30,6 +30,7 @@ import numpy as np
 DIM = 64
 STAY_DAYS = (3, 5)          # 머무는 회차 수 (뽑는다)
 MOVE_COST = 0.08            # 멀리 갈수록 지친다
+RECOVER = 0.06              # 회차마다 저절로 풀리는 몫 (가만히 있어도 회복된다)
 VISIT_WEIGHT = 0.16         # 섬에서 보는 것이 관심에 얹히는 정도
 
 # 섬의 장소들. 결(낱말)이 좌표를 만든다.
@@ -133,6 +134,9 @@ def _pick_spot(trip: dict, interests: dict, rng) -> str:
             s *= 3.0 + 4.0 * (tired - 0.5)   # 지칠수록 쉬는 곳이 끌린다
         if tired > 0.8 and name not in REST:
             s *= 0.12                        # 너무 지치면 다른 데는 못 간다
+        # 쉬는 곳으로 가는 길은 막지 않는다.
+        # 예전에는 지침이 0.8 을 넘으면 '모든' 이동 점수를 깎아서,
+        # 쉴 곳으로도 못 가고 한자리(식당)에 갇히는 일이 있었다.
         scores[name] = s
 
     names = list(scores)
@@ -172,7 +176,9 @@ def day(sb, tv: dict, state, identity=None, piu_identity=None,
         rested = False
     trip["spot"] = spot
     was = float(trip.get("tired") or 0.0)
-    relief = 0.7 if spot in REST else (0.3 if rested else 0.0)
+    # 쉬는 곳이면 많이, 제자리면 조금, 그 밖에도 회차마다 조금씩 풀린다.
+    # (가만히 있는데 영영 안 풀리면 한자리에 갇힌다)
+    relief = (0.7 if spot in REST else (0.3 if rested else 0.0)) + RECOVER
     trip["tired"] = max(0.0, min(1.2, was + MOVE_COST * moved - relief))
 
     scene = ("그 자리에 앉아 쉬었다" if rested
