@@ -470,6 +470,54 @@ with st.sidebar:
         except Exception:
             pass
 
+        # 🏘️ 마을 — 이웃들이 어디 있나
+        try:
+            import village as _vgm, villagers as _vpm
+            _vil = _vgm.load(sb)
+            _who = _vpm.load(sb)
+            _places = _vil.get("places") or {}
+            if _places:
+                st.markdown("---")
+                st.markdown("### 🏘️ 마을")
+                _EMO = {"몰랑이네": "🐰", "슈야토야네": "🧁", "미피네": "🍼",
+                        "빵집": "🥐", "우물가": "🪣", "꽃밭": "🌷",
+                        "언덕": "⛰️", "가게": "🏪", "놀이터": "🎠"}
+                _FACE = {"슈야": "🧁", "토야": "🍫", "미피": "🍼"}
+                _rows = sorted({x["at"][0] for x in _places.values()})
+                _cols = sorted({x["at"][1] for x in _places.values()})
+                _grid = {(x["at"][0], x["at"][1]): k for k, x in _places.items()}
+                _at = {}
+                for _n, _v in _who.items():
+                    _at.setdefault(_v.get("where"), []).append(_FACE.get(_n, "🐇"))
+                _cells = []
+                for _r in _rows:
+                    for _c in _cols:
+                        _nm = _grid.get((_r, _c))
+                        if not _nm:
+                            _cells.append('<div style="min-height:46px"></div>')
+                            continue
+                        _here = "".join(_at.get(_nm, []))
+                        _home = _places[_nm].get("kind") == "home"
+                        _cells.append(
+                            '<div style="background:rgba(255,200,150,'
+                            + ("0.35" if _home else "0.18")
+                            + ');border:1px solid #e8c9b0;border-radius:9px;'
+                            'padding:4px;min-height:46px;text-align:center">'
+                            f'<div style="font-size:1rem">{_EMO.get(_nm,"📍")}</div>'
+                            f'<div style="font-size:0.6rem;color:#444">{_nm}</div>'
+                            + (f'<div style="font-size:0.75rem">{_here}</div>'
+                               if _here else "") + "</div>")
+                st.markdown(
+                    f'<div style="display:grid;grid-template-columns:'
+                    f'repeat({len(_cols)},1fr);gap:4px;">' + "".join(_cells)
+                    + "</div>", unsafe_allow_html=True)
+                _born = (_vil.get("born") or [])
+                if _born:
+                    st.caption("　함께 만든 곳: "
+                               + ", ".join(b["name"] for b in _born[-3:]))
+        except Exception:
+            pass
+
         # 🏠 둘의 집과 바깥 — 어디에 있고, 무엇을 놓아뒀고, 무엇이 바뀌었나
         try:
             import home as _home
