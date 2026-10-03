@@ -211,6 +211,29 @@ with st.sidebar:
                     f"확인 필요 {len(_parsed['raw_answers'])} · "
                     f"표정 {len(_parsed['faces'])}개"
                     + (f" · 대화 {_parsed['talks']}회" if _parsed.get("talks") else ""))
+                # 사고 유형이 기록에 있으면 되돌릴 수 있게
+                _tr = _parsed.get("trees") or {}
+                if _tr:
+                    _miss = [k for k in _tr if k not in u.registry.trees]
+                    st.caption(f"🌳 기록에 든 사고 유형 {len(_tr)}개 "
+                               + (f"· 지금 없는 것 **{len(_miss)}개**"
+                                  if _miss else "· 모두 서버에 있음"))
+                    if _miss and safe(st.button,
+                                      f"사고 유형 {len(_miss)}개 되돌리기",
+                                      key=uk("mig_trees")):
+                        try:
+                            _r = legacy_import.restore_trees(sb, _parsed)
+                            if _r.get("restored"):
+                                st.success(
+                                    f"사고 유형 {_r['restored']}개를 되돌렸어요 "
+                                    f"({_r['before']} → {_r['now']}개). "
+                                    "복구 기록이 남아 자생과 구분됩니다.")
+                                st.rerun()
+                            else:
+                                st.warning(_r.get("why") or "되돌리지 못했어요")
+                        except Exception as e:
+                            st.error(f"되돌리기 실패: {e}")
+
                 _take_p = st.checkbox("말투(페르소나)도 가져오기", value=False,
                                       key=uk("mig_persona"))
                 if safe(st.button, "서버로 옮기기", key="mig_btn"):
