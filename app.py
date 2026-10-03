@@ -317,6 +317,44 @@ with st.sidebar:
     except Exception:
         pass
 
+    # 🕰️ 기다린 것 · 맞춰볼 것 — 이 아이가 먼저 묻는 자리
+    try:
+        _asks = [p for p in outbox.pending(sb, limit=6)
+                 if p.get("rule") in ("waiting", "confirm")]
+        if _asks:
+            st.markdown("---")
+            st.markdown("### 🕰️ 물어볼 게 있대요")
+            import caring as _cr
+            for _a in _asks[:2]:
+                st.caption("🐰 " + (_a.get("body") or ""))
+                if _a.get("rule") == "confirm":
+                    _c1, _c2 = st.columns(2)
+                    _fid = (_a.get("payload") or {}).get("fact_id")
+                    with _c1:
+                        if safe(st.button, "응, 맞아",
+                                key=uk(f"cf_y{_a.get('id')}")):
+                            if _fid:
+                                _cr.confirm_belief(sb, _fid, True)
+                            outbox.mark_sent(sb, [_a.get("id")])
+                            st.rerun()
+                    with _c2:
+                        if safe(st.button, "아니야",
+                                key=uk(f"cf_n{_a.get('id')}")):
+                            if _fid:
+                                _cr.confirm_belief(sb, _fid, False)
+                            outbox.mark_sent(sb, [_a.get("id")])
+                            st.rerun()
+                else:
+                    if safe(st.button, "대답하러 가기",
+                            key=uk(f"wt_{_a.get('id')}")):
+                        _wid = (_a.get("payload") or {}).get("wait_id")
+                        if _wid:
+                            _cr.mark_asked(sb, _wid)
+                        outbox.mark_sent(sb, [_a.get("id")])
+                        st.rerun()
+    except Exception:
+        pass
+
     # 검토 대기 — 검토함이 두 곳이다(대화에서 격리된 사실 + 워커가 찾아온 관측).
     # 앱이 한 쪽만 읽어서 워커가 격리해도 0으로 보이던 문제를 고쳤다.
     _cnt = review_box.counts(sb, u.identity)
