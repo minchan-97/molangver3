@@ -182,6 +182,102 @@ def restore_trees(sb, parsed: dict, log=None) -> dict:
             "saved": bool(res.get("ok")), "error": res.get("error")}
 
 
+def restore_paths(sb, parsed: dict) -> dict:
+    """
+    **지금 것을 버리지 않고** 빠진 경로 기록만 되돌린다.
+
+    경로 기록은 '이 개체가 무엇을 어떻게 판단해왔는가' 의 흔적이다.
+    자료 구조를 바꾸면서 옛 형식이 걸러져 75건이 사라졌다.
+    트리·노드·기억·사실은 지금 것이 더 최신이므로 건드리지 않고,
+    **기록에만 있고 지금 없는 경로**를 앞에 이어 붙인다.
+
+    그래서 어느 쪽도 버리지 않는다.
+    """
+    saved = parsed.get("trees") or {}
+    if not saved:
+        return {"added": 0, "why": "기록에 사고 유형이 없음"}
+
+    import os
+    import dataclasses as dc
+    import registry_store
+    from tree_registry import TreeRegistry, load_logic_db_types
+    from thought_structure import PathRecord
+
+    reg = TreeRegistry()
+    here = os.path.dirname(os.path.abspath(__file__))
+    try:
+        load_logic_db_types(reg, os.path.join(here, "logic_db.json"))
+    except Exception:
+        pass
+    registry_store.load_into(sb, reg)
+
+    fields = {f.name for f in dc.fields(PathRecord)}
+
+    def key(rec):
+        """같은 판단인지 — 시각과 지나간 길로 본다."""
+        p = rec.path if hasattr(rec, "path") else rec.get("path")
+        t = rec.timestamp if hasattr(rec, "timestamp") else rec.get("timestamp")
+        return (str(t), tuple(p or []))
+
+    # 서버에 없는 트리는 기록에서 되살려서라도 경로를 지킨다.
+    # (general 처럼 노드가 비어 복원에서 걸러진 트리의 경로 34건이
+    #  이 때문에 안 돌아왔다)
+    from thought_structure import ThoughtStructure, JudgmentNode
+
+    added, detail = 0, {}
+    for tid, tb in saved.items():
+        t = reg.trees.get(tid)
+        if t is None:
+            try:
+                t = ThoughtStructure(learning_rate=tb.get("lr", 0.1),
+                                     continuity=tb.get("continuity", 0.5))
+                for k, v in (tb.get("nodes") or {}).items():
+                    try:
+                        t.nodes[k] = JudgmentNode(**v)
+                    except Exception:
+                        continue
+                t.transitions = tb.get("transitions") or {}
+                t.root_id = tb.get("root_id")
+                t.memory = tb.get("memory", [])
+                t.history = []
+                reg.trees[tid] = t
+            except Exception:
+                continue
+        have = {key(r) for r in (t.history or [])}
+        old = []
+        for r in (tb.get("history") or []):
+            try:
+                rec = PathRecord(**{k: v for k, v in r.items() if k in fields})
+            except Exception:
+                continue
+            if key(rec) in have:
+                continue
+            old.append(rec)
+        if not old:
+            continue
+        # 옛 기록이 앞, 지금 기록이 뒤 — 시간 순서를 지킨다
+        t.history = old + list(t.history or [])
+        detail[tid] = len(old)
+        added += len(old)
+
+    if not added:
+        return {"added": 0, "why": "빠진 경로가 없음"}
+
+    import time
+    try:
+        reg.creation_log = list(getattr(reg, "creation_log", []) or [])
+        reg.creation_log.append({
+            "at": time.time(), "kind": "paths_restored",
+            "detail": detail,
+            "reason": "자료 구조 변경으로 걸러진 옛 경로 기록을 되돌림"})
+    except Exception:
+        pass
+
+    res = registry_store.save(sb, reg)
+    return {"added": added, "detail": detail,
+            "saved": bool(res.get("ok")), "error": res.get("error")}
+
+
 def apply(sb, identity, parsed: dict, take_persona=False) -> dict:
     """나뉜 목록을 서버에 넣는다. 답변 원문은 격리로."""
     if parsed.get("error"):
