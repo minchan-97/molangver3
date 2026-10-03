@@ -21,5 +21,8 @@ jobs:
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           BRAVE_API_KEY: ${{ secrets.BRAVE_API_KEY }}
+          # 하고 싶은 말을 폰으로 보내기 (ntfy). 없으면 알림만 건너뛴다.
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          APP_URL: ${{ secrets.APP_URL }}
           SEARCH_EVERY: "3"      # 몇 회차에 한 번 검색할지 (나머지는 생각만)
           MUSING_ROUNDS: "40"    # 한 번 깨어날 때 생각하는 횟수 (비용 0)
