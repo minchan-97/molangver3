@@ -704,63 +704,62 @@ with st.sidebar:
             st.caption("지금 품은 목적: " +
                        " · ".join(s["purpose"] for s in _subs[:4]))
 
-    st.markdown("---")
-    st.markdown(f"### 🧪 검토 대기 {_cnt['total']}")
-    st.caption(f"대화에서 {_cnt['fact']}건 · 워커가 찾은 것 {_cnt['observation']}건")
-    if not _q:
-        st.caption("지금은 없어요. 대화하거나 워커가 돌면 여기에 쌓여요.")
-    else:
-        for _item in _q[:8]:
-            if _item["where"] == "error":       # 읽기 실패는 버튼 없이 알림만
-                st.error(_item["title"])
-                continue
-            c1, c2, c3 = st.columns([5, 1, 1])
-            _mark = "💬" if _item["where"] == "fact" else "🔎"
-            c1.caption(f"{_mark} {_item['title']}")
-            c1.caption(f"　{_item['reason']}")
-            if _item.get("url"):
-                c1.caption(f"　{_item['url'][:50]}")
-            _k = f"{_item['where']}_{_item['id']}"
-            # 긴 대화 원문은 그대로 사실이 못 된다 → 사실만 뽑아서 넣는 길을 준다
-            if len(_item.get("title") or "") > 60 or _item.get("url"):
-                if safe(c1.button, "✂️ 사실만 뽑기", key=f"ex_{_k}"):
-                    with st.spinner("뽑는 중…"):
-                        st.session_state[f"ex_res_{_k}"] = review_box.extract_facts(
-                            _item.get("full") or _item.get("title") or "",
-                            st.session_state.api_key)
-            _ex = st.session_state.get(f"ex_res_{_k}")
-            if _ex:
-                if _ex.get("error"):
-                    c1.caption(f"뽑기 실패: {_ex['error'][:50]}")
-                elif not (_ex["user"] or _ex["molang"]):
-                    c1.caption("남길 만한 사실이 없어요")
-                else:
-                    for _t in _ex["user"]:
-                        c1.caption(f"　👤 {_t}")
-                    for _t in _ex["molang"]:
-                        c1.caption(f"　🐰 {_t}")
-                    if safe(c1.button, "이대로 넣기", key=f"exok_{_k}"):
-                        _r = review_box.save_extracted(
-                            sb, u.identity, _item, _ex["user"], _ex["molang"])
-                        if _r.get("ok"):
-                            st.session_state.pop(f"ex_res_{_k}", None)
-                            st.rerun()
-                        else:
-                            st.error(_r.get("error"))
-            if safe(c2.button, "○", key=f"ok_{_k}", help="맞아요 / 쓸 만해요"):
-                _r = review_box.approve(sb, u.identity, _item)
-                if _r.get("ok"):
-                    st.rerun()
-                else:                       # 조용히 실패하면 왜 안 되는지 모른다
-                    st.error(f"승인 실패: {_r.get('error')}")
-            if safe(c3.button, "×", key=f"no_{_k}", help="아니에요"):
-                _r = review_box.reject(sb, u.identity, _item)
-                if _r.get("ok"):
-                    st.rerun()
-                else:
-                    st.error(f"거절 실패: {_r.get('error')}")
+        st.markdown(f"### 🧪 검토 대기 {_cnt['total']}")
+        st.caption(f"대화에서 {_cnt['fact']}건 · 워커가 찾은 것 {_cnt['observation']}건")
+        if not _q:
+            st.caption("지금은 없어요. 대화하거나 워커가 돌면 여기에 쌓여요.")
+        else:
+            for _item in _q[:8]:
+                if _item["where"] == "error":       # 읽기 실패는 버튼 없이 알림만
+                    st.error(_item["title"])
+                    continue
+                c1, c2, c3 = st.columns([5, 1, 1])
+                _mark = "💬" if _item["where"] == "fact" else "🔎"
+                c1.caption(f"{_mark} {_item['title']}")
+                c1.caption(f"　{_item['reason']}")
+                if _item.get("url"):
+                    c1.caption(f"　{_item['url'][:50]}")
+                _k = f"{_item['where']}_{_item['id']}"
+                # 긴 대화 원문은 그대로 사실이 못 된다 → 사실만 뽑아서 넣는 길을 준다
+                if len(_item.get("title") or "") > 60 or _item.get("url"):
+                    if safe(c1.button, "✂️ 사실만 뽑기", key=f"ex_{_k}"):
+                        with st.spinner("뽑는 중…"):
+                            st.session_state[f"ex_res_{_k}"] = review_box.extract_facts(
+                                _item.get("full") or _item.get("title") or "",
+                                st.session_state.api_key)
+                _ex = st.session_state.get(f"ex_res_{_k}")
+                if _ex:
+                    if _ex.get("error"):
+                        c1.caption(f"뽑기 실패: {_ex['error'][:50]}")
+                    elif not (_ex["user"] or _ex["molang"]):
+                        c1.caption("남길 만한 사실이 없어요")
+                    else:
+                        for _t in _ex["user"]:
+                            c1.caption(f"　👤 {_t}")
+                        for _t in _ex["molang"]:
+                            c1.caption(f"　🐰 {_t}")
+                        if safe(c1.button, "이대로 넣기", key=f"exok_{_k}"):
+                            _r = review_box.save_extracted(
+                                sb, u.identity, _item, _ex["user"], _ex["molang"])
+                            if _r.get("ok"):
+                                st.session_state.pop(f"ex_res_{_k}", None)
+                                st.rerun()
+                            else:
+                                st.error(_r.get("error"))
+                if safe(c2.button, "○", key=f"ok_{_k}", help="맞아요 / 쓸 만해요"):
+                    _r = review_box.approve(sb, u.identity, _item)
+                    if _r.get("ok"):
+                        st.rerun()
+                    else:                       # 조용히 실패하면 왜 안 되는지 모른다
+                        st.error(f"승인 실패: {_r.get('error')}")
+                if safe(c3.button, "×", key=f"no_{_k}", help="아니에요"):
+                    _r = review_box.reject(sb, u.identity, _item)
+                    if _r.get("ok"):
+                        st.rerun()
+                    else:
+                        st.error(f"거절 실패: {_r.get('error')}")
 
-    st.markdown("---")
+        st.markdown("---")
     st.caption("처음이면: 몰랑이 사진 → 외형학습 → 표정생성")
     base_img = safe(st.file_uploader, "기본 몰랑이 사진", key="base_img",
                     type=["png","jpg","jpeg","webp","gif","bmp"])
