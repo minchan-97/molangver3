@@ -293,10 +293,20 @@ FLIPPED = ("너가 찾", "네가 찾", "너가 알아", "네가 알아", "너가
 
 
 def _keep_core(original: str, polished: str) -> bool:
-    """다듬은 말이 원래 알맹이와 **화자**를 지켰는지."""
+    """다듬은 말이 원래 알맹이와 **화자와 문장의 꼴**을 지켰는지."""
     import re
     if any(f in polished for f in FLIPPED):
         return False                      # 주어가 뒤집힘 → 원문을 쓴다
+
+    # **묻는 말은 묻는 말로 남아야 한다.**
+    # 다듬기가 "이거 맞아?" 를 "…는 사실이야" 로 바꾼 일이 있었다.
+    # 그러면 재확인이 아니라 거짓 확신이 된다 — 흐려진 기억을 묻는 자리인데
+    # 오히려 더 단단하게 말해버리는 셈이다.
+    if "?" in original and "?" not in polished:
+        return False
+    ASSERT = ("사실이야", "맞아!", "확실해", "분명해", "틀림없")
+    if "?" in original and any(x in polished for x in ASSERT):
+        return False
     core = re.findall(r'"([^"]+)"', original)
     for c in core:
         head = c.strip()[:8]
@@ -433,4 +443,3 @@ def mark_sent(sb, ids: list[int]):
             {"sent_at": _now().isoformat()}).in_("id", ids).execute()
     except Exception:
         pass
-
