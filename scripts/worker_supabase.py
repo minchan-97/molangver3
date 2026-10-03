@@ -295,14 +295,17 @@ def main(mode):
                         store.record_observations(_pitems)
                     _piu = piupiu.identity(store.sb)
                     _mol = SupabaseIdentity(store.sb)
-                    _where = (out.get('home') or {})
-                    _mol.place = _where.get('molang')
-                    _piu.place = _where.get('piupiu')
+                    # 이름을 바꾼다 — 바깥에 같은 이름의 함수 _where() 가 있어
+                    # 그것이 가려지면서, 오류가 났을 때 오류 처리 쪽이
+                    # 또 터졌다 (UnboundLocalError).
+                    _place = (out.get('home') or {})
+                    _mol.place = _place.get('molang')
+                    _piu.place = _place.get('piupiu')
                     _talk = piupiu.converse(
                         store.sb, _mol, _piu, _seen,
                         os.environ.get('OPENAI_API_KEY'),
-                        place=_where.get('molang'),
-                        same_room=bool(_where.get('same_room')),
+                        place=_place.get('molang'),
+                        same_room=bool(_place.get('same_room')),
                         state=state)
                     # 2) 관심이 서로 물든다
                     _bleed = piupiu.bleed_interests(state, {_ptopic: 1.0})
