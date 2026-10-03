@@ -286,72 +286,78 @@ with st.sidebar:
                     except Exception as e:
                         st.error(f"옮기기 실패: {e}")
 
-    # 🪞 내다보기 — 이 아이가 바깥을 궁금해할 때만 카메라가 뜬다.
-    # 늘 켜져 있는 눈이 아니라, 궁금할 때 묻고 사람이 보여주는 창이다.
+    # 💬 묻는 말 — **한 번에 하나씩.**
+    #
+    # 궁금한 것, 기다린 것, 맞춰볼 것이 한꺼번에 뜨면 취조가 된다.
+    # 오래된 것부터 하나만 보여주고, 답하면 다음이 나온다.
     try:
-        _peeks = [p for p in outbox.pending(sb, limit=5)
-                  if p.get("rule") == "peek"]
-        if _peeks:
-            st.markdown("---")
-            st.markdown("### 🪞 밖이 궁금한가 봐요")
-            st.caption("🐰 " + (_peeks[0].get("body") or "지금 거기 어때?"))
-            _c1, _c2 = st.columns(2)
-            with _c1:
-                _shot = safe(st.camera_input, "📷 보여주기",
-                             key=uk("peek_cam"))
-                if _shot is not None:
-                    st.session_state["peek_photo"] = _shot.getvalue()
-                    st.session_state["peek_id"] = _peeks[0].get("id")
-                    st.caption("보여줬어요.")
-            with _c2:
-                # 녹음은 사람이 눌러야 켜진다 — 늘 듣는 귀가 되지 않는다
-                _snd = None
-                try:
-                    _snd = st.audio_input("🎤 들려주기", key=uk("peek_mic"))
-                except Exception:
-                    st.caption("(이 판에서는 녹음을 쓸 수 없어요)")
-                if _snd is not None:
-                    st.session_state["peek_sound"] = _snd.getvalue()
-                    st.session_state["peek_id"] = _peeks[0].get("id")
-                    st.caption("들려줬어요.")
-    except Exception:
-        pass
-
-    # 🕰️ 기다린 것 · 맞춰볼 것 — 이 아이가 먼저 묻는 자리
-    try:
-        _asks = [p for p in outbox.pending(sb, limit=6)
-                 if p.get("rule") in ("waiting", "confirm")]
+        _asks = [p for p in outbox.pending(sb, limit=10)
+                 if p.get("rule") in ("peek", "waiting", "confirm")]
+        _asks.sort(key=lambda p: p.get("id") or 0)      # 오래된 것부터
         if _asks:
+            _a = _asks[0]
+            _rule = _a.get("rule")
+            _pay = _a.get("payload") or {}
+            _left = len(_asks) - 1
+
             st.markdown("---")
-            st.markdown("### 🕰️ 물어볼 게 있대요")
+            st.markdown("### 💬 물어볼 게 있대요"
+                        + (f"  ({_left}개 더)" if _left else ""))
+            st.caption("🐰 " + (_a.get("body") or ""))
+
             import caring as _cr
-            for _a in _asks[:2]:
-                st.caption("🐰 " + (_a.get("body") or ""))
-                if _a.get("rule") == "confirm":
-                    _c1, _c2 = st.columns(2)
-                    _fid = (_a.get("payload") or {}).get("fact_id")
-                    with _c1:
-                        if safe(st.button, "응, 맞아",
-                                key=uk(f"cf_y{_a.get('id')}")):
-                            if _fid:
-                                _cr.confirm_belief(sb, _fid, True)
-                            outbox.mark_sent(sb, [_a.get("id")])
-                            st.rerun()
-                    with _c2:
-                        if safe(st.button, "아니야",
-                                key=uk(f"cf_n{_a.get('id')}")):
-                            if _fid:
-                                _cr.confirm_belief(sb, _fid, False)
-                            outbox.mark_sent(sb, [_a.get("id")])
-                            st.rerun()
-                else:
-                    if safe(st.button, "대답하러 가기",
-                            key=uk(f"wt_{_a.get('id')}")):
-                        _wid = (_a.get("payload") or {}).get("wait_id")
-                        if _wid:
-                            _cr.mark_asked(sb, _wid)
-                        outbox.mark_sent(sb, [_a.get("id")])
-                        st.rerun()
+
+            def _done(extra=None):
+                outbox.mark_sent(sb, [_a.get("id")])
+                if extra:
+                    extra()
+                st.rerun()
+
+            if _rule == "confirm":
+                _c1, _c2, _c3 = st.columns(3)
+                _fid = _pay.get("fact_id")
+                with _c1:
+                    if safe(st.button, "응, 맞아", key=uk(f"ak_y{_a.get('id')}")):
+                        _done(lambda: _fid and _cr.confirm_belief(sb, _fid, True))
+                with _c2:
+                    if safe(st.button, "아니야", key=uk(f"ak_n{_a.get('id')}")):
+                        _done(lambda: _fid and _cr.confirm_belief(sb, _fid, False))
+                with _c3:
+                    if safe(st.button, "나중에", key=uk(f"ak_l{_a.get('id')}")):
+                        _done()
+
+            elif _rule == "peek":
+                _c1, _c2 = st.columns(2)
+                with _c1:
+                    _shot = safe(st.camera_input, "📷 보여주기",
+                                 key=uk("peek_cam"))
+                    if _shot is not None:
+                        st.session_state["peek_photo"] = _shot.getvalue()
+                        st.session_state["peek_id"] = _a.get("id")
+                        st.caption("보여줬어요. 아래 대화에서 반응을 들어보세요.")
+                with _c2:
+                    _snd = None
+                    try:
+                        _snd = st.audio_input("🎤 들려주기", key=uk("peek_mic"))
+                    except Exception:
+                        st.caption("(이 판에서는 녹음을 못 써요)")
+                    if _snd is not None:
+                        st.session_state["peek_sound"] = _snd.getvalue()
+                        st.session_state["peek_id"] = _a.get("id")
+                        st.caption("들려줬어요.")
+                if safe(st.button, "지금은 안 돼", key=uk(f"ak_s{_a.get('id')}")):
+                    _done()
+
+            else:   # waiting
+                _c1, _c2 = st.columns(2)
+                with _c1:
+                    if safe(st.button, "대답할게",
+                            key=uk(f"ak_a{_a.get('id')}")):
+                        _wid = _pay.get("wait_id")
+                        _done(lambda: _wid and _cr.mark_asked(sb, _wid))
+                with _c2:
+                    if safe(st.button, "나중에", key=uk(f"ak_w{_a.get('id')}")):
+                        _done()
     except Exception:
         pass
 
