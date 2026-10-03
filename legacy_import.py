@@ -109,14 +109,32 @@ def restore_trees(sb, parsed: dict, log=None) -> dict:
         load_logic_db_types(reg, os.path.join(here, "logic_db.json"))
     except Exception:
         pass
+    # **서버에 실제로 있는 것**이 무엇인지 따로 센다.
+    # logic_db 기본형을 깔고 나면 'general' 같은 것이 '이미 있다'로 보여
+    # 서버에서 사라진 줄 모르고 건너뛴다. 그러면 거기 쌓였던 기억이
+    # 영영 안 돌아온다 (실제로 10건을 잃을 뻔했다).
+    probe = TreeRegistry()
+    registry_store.load_into(sb, probe)
+    on_server = set(probe.trees)
+
     registry_store.load_into(sb, reg)
     before = set(reg.trees)
 
     fields = {f.name for f in dc.fields(PathRecord)}
     done = []
+    filled = []
     for tid, tb in saved.items():
-        if tid in reg.trees:
+        cur = reg.trees.get(tid)
+        if cur is not None and tid in on_server:
+            # 서버에 있는 것은 그대로 둔다. 다만 **기억이 비어 있고 기록에는
+            # 있다면** 그 기억만 채운다 (기본형으로 다시 깔리면서 비는 경우).
+            if not getattr(cur, "memory", None) and tb.get("memory"):
+                cur.memory = tb["memory"]
+                if not cur.history and tb.get("history"):
+                    pass        # 경로는 아래 복원 절차와 같게 두지 않는다
+                filled.append(tid)
             continue
+        # 서버에 없으면 기본형이어도 기록에서 되살린다
         try:
             t = ThoughtStructure(learning_rate=tb.get("lr", 0.1),
                                  continuity=tb.get("continuity", 0.5))
@@ -143,7 +161,7 @@ def restore_trees(sb, parsed: dict, log=None) -> dict:
         except Exception:
             continue
 
-    if not done:
+    if not done and not filled:
         return {"restored": 0, "why": "되돌릴 것이 없음", "now": len(reg.trees)}
 
     # 복구 표시 — 자생과 구분되어야 한다
@@ -152,13 +170,14 @@ def restore_trees(sb, parsed: dict, log=None) -> dict:
         reg.creation_log = list(getattr(reg, "creation_log", []) or [])
         reg.creation_log.append({
             "at": time.time(), "kind": "restored",
-            "ids": done,
+            "ids": done, "memory_filled": filled,
             "reason": "성장 기록에서 되돌림 (자생 아님)"})
     except Exception:
         pass
 
     res = registry_store.save(sb, reg)
     return {"restored": len(done), "ids": done,
+            "filled": len(filled), "filled_ids": filled,
             "before": len(before), "now": len(reg.trees),
             "saved": bool(res.get("ok")), "error": res.get("error")}
 
