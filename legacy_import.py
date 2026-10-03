@@ -32,8 +32,23 @@ def read(raw: bytes) -> dict:
     except Exception as e:
         return {"error": f"읽기 실패: {e}"}
 
+    # 새 판 성장 기록(growth_export) — trees / facts 가 들어 있다.
+    # 사고 유형이 유실됐을 때 **되돌리는 데 쓴다.**
+    trees = {}
+    if isinstance(d, dict) and isinstance(d.get("trees"), dict):
+        trees = {k: v for k, v in d["trees"].items() if isinstance(v, dict)}
+
     sure, unsure = [], []
-    if isinstance(d, dict):
+    if isinstance(d, dict) and d.get("facts") and not d.get("self_model"):
+        # 새 판: facts 목록에서 바로
+        for f in d["facts"]:
+            if not isinstance(f, dict):
+                continue
+            (sure if (f.get("strength") or 0) >= 0.8
+             else unsure).append(f.get("text") or "")
+        persona = ""
+        talks = (d.get("meta") or {}).get("cycle")
+    elif isinstance(d, dict):
         sm = d.get("self_model") or {}
         sure = list(sm.get("확신하는_것") or [])
         unsure = list(sm.get("아직_확신못하는_것") or [])
@@ -65,9 +80,87 @@ def read(raw: bytes) -> dict:
 
     return {"user_facts": user_facts, "self_facts": self_facts,
             "raw_answers": raw_answers, "persona": persona, "talks": talks,
+            "trees": trees,
             "faces": (d.get("molang_faces") if isinstance(d, dict) else None) or {},
             "appearance": (d.get("molang_appearance")
                            if isinstance(d, dict) else None)}
+
+
+def restore_trees(sb, parsed: dict, log=None) -> dict:
+    """
+    기록에 있는 사고 유형 중 **지금 서버에 없는 것만** 되돌린다.
+    지금 있는 것은 건드리지 않는다 (서버 쪽이 더 최신이므로).
+
+    되돌린 것에는 복구 표시를 남긴다 — 자란 것과 섞이면 안 된다.
+    """
+    saved = parsed.get("trees") or {}
+    if not saved:
+        return {"restored": 0, "why": "기록에 사고 유형이 없음"}
+
+    import os
+    import registry_store
+    from tree_registry import TreeRegistry, load_logic_db_types
+    from thought_structure import ThoughtStructure, JudgmentNode, PathRecord
+    import dataclasses as dc
+
+    reg = TreeRegistry()
+    here = os.path.dirname(os.path.abspath(__file__))
+    try:
+        load_logic_db_types(reg, os.path.join(here, "logic_db.json"))
+    except Exception:
+        pass
+    registry_store.load_into(sb, reg)
+    before = set(reg.trees)
+
+    fields = {f.name for f in dc.fields(PathRecord)}
+    done = []
+    for tid, tb in saved.items():
+        if tid in reg.trees:
+            continue
+        try:
+            t = ThoughtStructure(learning_rate=tb.get("lr", 0.1),
+                                 continuity=tb.get("continuity", 0.5))
+            for k, v in (tb.get("nodes") or {}).items():
+                try:
+                    t.nodes[k] = JudgmentNode(**v)
+                except Exception:
+                    continue
+            if not t.nodes:
+                continue
+            t.transitions = tb.get("transitions") or {}
+            t.root_id = tb.get("root_id")
+            hist = []
+            for r in (tb.get("history") or []):
+                try:
+                    hist.append(PathRecord(**{k: v for k, v in r.items()
+                                              if k in fields}))
+                except Exception:
+                    continue
+            t.history = hist
+            t.memory = tb.get("memory", [])
+            reg.trees[tid] = t
+            done.append(tid)
+        except Exception:
+            continue
+
+    if not done:
+        return {"restored": 0, "why": "되돌릴 것이 없음", "now": len(reg.trees)}
+
+    # 복구 표시 — 자생과 구분되어야 한다
+    import time
+    try:
+        reg.creation_log = list(getattr(reg, "creation_log", []) or [])
+        reg.creation_log.append({
+            "at": time.time(), "kind": "restored",
+            "ids": done,
+            "reason": "성장 기록에서 되돌림 (자생 아님)"})
+    except Exception:
+        pass
+
+    res = registry_store.save(sb, reg)
+    return {"restored": len(done), "ids": done,
+            "before": len(before), "now": len(reg.trees),
+            "saved": bool(res.get("ok")), "error": res.get("error")}
 
 
 def apply(sb, identity, parsed: dict, take_persona=False) -> dict:
