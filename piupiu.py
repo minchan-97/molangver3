@@ -179,10 +179,27 @@ def converse(sb, mol_ident, piu_ident, seen: dict, api_key=None,
     _TEMPLATE = ("알게 된 것", "빈 문자열", "낱말 하나", "또는 빈",
                  "molang_learns", "piupiu_learns", "topic_for_piupiu")
 
+    # 겹겹이 꼬인 말은 사실이 아니다.
+    # "피우피우는 몰랑이가 피우피우에 대해 알게 된 것: …" 같은 것이
+    # 그대로 저장된 일이 있었다. 누가 무엇을 아는지가 두 겹이 되면
+    # 나중에 꺼낼 때 뜻이 안 선다.
+    import re as _re
+    def _tangled(t: str) -> bool:
+        names = ("몰랑이", "피우피우")
+        # 이름이 세 번 이상 나오면 꼬인 것
+        if sum(t.count(n) for n in names) >= 3:
+            return True
+        # '알게 됐다'가 겹치거나, 메타 서술
+        if t.count("알게") >= 2 or t.count("알고 있") >= 2:
+            return True
+        if _re.search(r"(새로운 정보가 없|이미 알았기 때문|알게 된 것:)", t):
+            return True
+        return False
+
     for ident, key, who in ((mol_ident, "molang_learns", "피우피우"),
                             (piu_ident, "piupiu_learns", "몰랑이")):
         t = (talk.get(key) or "").strip()
-        if any(x in t for x in _TEMPLATE):
+        if any(x in t for x in _TEMPLATE) or _tangled(t):
             continue
         if 4 <= len(t) <= 80:
             try:
