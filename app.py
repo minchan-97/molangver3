@@ -718,9 +718,25 @@ with st.sidebar:
                       .in_("rule", ["purpose_sub", "purpose_core"])
                       .is_("error", "null")
                       .order("id", desc=True).limit(6).execute().data) or []
+            # 이미 정한 것은 다시 묻지 않는다.
+            #
+            # 하위 제안은 payload.purpose 에, **핵심 제안은 payload.new 에**
+            # 문장이 들어 있다. 전자만 보고 거르는 바람에 핵심 제안이
+            # 승인한 뒤에도 계속 떴다 (그래서 네 번 중복 저장됐다).
             _done = {p.get("purpose") for p in purpose_growth.load_subs(sb, False)}
-            _props = [p for p in _props
-                      if (p.get("payload") or {}).get("purpose") not in _done][:3]
+            try:
+                _done |= {p.get("purpose") for p in
+                          (sb.table("molang_purposes").select("purpose")
+                           .eq("status", "core").execute().data or [])}
+            except Exception:
+                pass
+
+            def _said(p):
+                pl = p.get("payload") or {}
+                return pl.get("new") if p.get("rule") == "purpose_core" \
+                    else pl.get("purpose")
+
+            _props = [p for p in _props if _said(p) not in _done][:3]
         except Exception:
             _props = []
         if _props:
