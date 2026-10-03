@@ -233,14 +233,29 @@ def accept(sb, identity, outbox_row) -> dict:
             sb.table("molang_purposes").insert({
                 "purpose": p.get("purpose"), "from_topic": p.get("from_topic"),
                 "why": p.get("why"), "status": "active"}).execute()
+            try:
+                from datetime import datetime, timezone
+                sb.table("molang_outbox").update(
+                    {"sent_at": datetime.now(timezone.utc).isoformat()}
+                ).eq("id", outbox_row.get("id")).execute()
+            except Exception:
+                pass
             return {"ok": True, "kind": "sub"}
         if rule == "purpose_core":
             new = p.get("new")
             if not new:
                 return {"ok": False, "error": "새 목적 문장이 없어요"}
-            sb.table("molang_purposes").insert({
-                "purpose": new, "from_topic": "(핵심)", "why": p.get("changed"),
-                "status": "core"}).execute()
+            # 핵심 목적은 하나뿐이다. 같은 문장이 이미 있으면 또 넣지 않는다.
+            try:
+                got = (sb.table("molang_purposes").select("id")
+                       .eq("status", "core").eq("purpose", new)
+                       .limit(1).execute().data) or []
+            except Exception:
+                got = []
+            if not got:
+                sb.table("molang_purposes").insert({
+                    "purpose": new, "from_topic": "(핵심)",
+                    "why": p.get("changed"), "status": "core"}).execute()
             base = identity.persona or ""
             import re
             if "[무엇을 향해 사는가]" in base:
@@ -250,6 +265,14 @@ def accept(sb, identity, outbox_row) -> dict:
                 base = f"[무엇을 향해 사는가] {new}\n" + base
             identity.persona = base
             identity.save_identity()
+            # 같은 제안이 다시 뜨지 않게 표시해 둔다
+            try:
+                from datetime import datetime, timezone
+                sb.table("molang_outbox").update(
+                    {"sent_at": datetime.now(timezone.utc).isoformat()}
+                ).eq("id", outbox_row.get("id")).execute()
+            except Exception:
+                pass
             return {"ok": True, "kind": "core", "new": new}
         return {"ok": False, "error": "목적 제안이 아니에요"}
     except Exception as e:
