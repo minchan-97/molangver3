@@ -114,7 +114,10 @@ def load_into(sb, registry: TreeRegistry) -> int:
             skipped_hist += sum(1 for x in hist if x is None)
             t.history = [x for x in hist if x is not None]
             t.memory = tb.get("memory", [])
-            if not t.nodes:          # 노드가 하나도 없으면 트리가 아니다
+            # 노드가 없어도 **경로나 기억이 있으면 버리지 않는다.**
+            # 'general' 은 노드 없이 경로 34건만 들고 있었는데, 이 조건에
+            # 걸려 그 판단 이력이 통째로 사라졌다.
+            if not t.nodes and not t.history and not t.memory:
                 continue
             registry.trees[tid] = t
             n += 1
@@ -136,4 +139,3 @@ def load_into(sb, registry: TreeRegistry) -> int:
         except Exception:
             pass
     return n
-
