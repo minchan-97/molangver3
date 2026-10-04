@@ -28,7 +28,21 @@ ABSORBABLE = {'user'}
 
 
 # molang_facts.source_ok 제약과 같은 값 (DB 와 코드가 어긋나면 저장이 통째로 실패)
-ALLOWED_SOURCES = {'user', 'assistant', 'search', 'nudge'}
+#
+# **여기를 늘릴 때는 DB 제약도 함께 늘려야 한다.**
+# 실제로 travel·peer 를 코드에만 더하고 이 목록을 안 늘려서,
+# 모든 사실이 조용히 'user' 로 바뀌었다 (306건 전부). 그 탓에
+# 출처별로 다르게 옅어지는 것도, 겪음 판정도 전부 작동하지 않았다.
+ALLOWED_SOURCES = {
+    'user', 'assistant', 'search', 'nudge',
+    'travel',    # 여행에서 겪은 일
+    'home',      # 집에서 일어난 일
+    'land',      # 바깥 나들이
+    'dream',     # 꿈
+    'peer',      # 피우피우와의 대화
+    'village',   # 마을 사람에게 들은 것
+    'self',      # 스스로 알아차린 것
+}
 
 
 # 몰랑이가 자기 느낌을 말한 것을 사용자 사실로 적으면 기억의 주인이 바뀐다.
