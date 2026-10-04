@@ -478,3 +478,4 @@ def describe(home: dict) -> str:
     stuff = "; ".join(f"{r}({', '.join(o['name'] for o in v)})"
                       for r, v in objs.items() if v)
     return f"[집] {here}" + (f" · 물건 — {stuff}" if stuff else "")
+
