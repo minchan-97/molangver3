@@ -193,7 +193,7 @@ def _drift(pieces: list[dict], identity) -> float:
         return 0.0
 
 
-def _linger(pieces: list[dict], identity, rng) -> str | None:
+def _linger(pieces: list[dict], identity, rng) -> tuple:
     """
     겹친 조각들 중 무엇이 깨어난 뒤까지 남나.
 
@@ -236,7 +236,10 @@ def _linger(pieces: list[dict], identity, rng) -> str | None:
         cands = [w for w in cands if 2 <= len(w) <= 8]
     cands = list(dict.fromkeys(cands))
     if not cands:
-        return None
+        # 받는 쪽은 (낱말, 까닭) 두 개를 기대한다.
+        # 여기서만 None 하나를 돌려줘서, 남을 낱말이 없는 밤이면
+        # 회차가 통째로 멈췄다 (cannot unpack non-iterable NoneType).
+        return None, []
 
     try:
         import numpy as np
