@@ -470,14 +470,17 @@ with st.sidebar:
         except Exception:
             pass
 
-        # 🗺️ 세계 — 집·바깥·마을이 한 장에.
+        # 🗺️ 세계 — 바깥(동네)과 집 안을 나란히.
+        #
+        # 한 격자에 섞으면 '부엌' 이 '바다' 옆에 있는 것처럼 보여
+        # 세계가 뭉개진다. 그래서 두 장으로 나누되 함께 보여준다.
         # **안 가본 곳은 검게 가려진다.** 다녀오면 또렷해지고,
-        # 누가 얘기해주면 흐리게 드러난다. 그래서 지도가 함께 넓어진다.
+        # 누가 얘기해주면 흐리게 드러난다.
         try:
             import worldmap as _wmv
             _w = _wmv.load(sb)
-            _rows = _wmv.rows(sb, _w)
-            if _rows:
+            _maps = _wmv.rows(sb, _w)
+            if _maps.get("outside") or _maps.get("inside"):
                 st.markdown("---")
                 st.markdown("### 🗺️ 세계")
                 st.caption(_wmv.describe(_w))
@@ -485,34 +488,46 @@ with st.sidebar:
                          "슈야": "🧁", "토야": "🍫", "미피": "🍼"}
                 _ZONE = {"home": "#f6e7d8", "land": "#dbeafe",
                          "village": "#e7f6e3"}
-                _cells, _w_n = [], max(len(r) for r in _rows)
-                for _row in _rows:
-                    for _i in range(_w_n):
-                        _c = _row[_i] if _i < len(_row) else None
-                        if _c is None:
-                            _cells.append('<div style="min-height:44px"></div>')
-                            continue
-                        _stt = _c["status"]
-                        if _stt == "unknown":
+
+                def _draw(_rows, _title):
+                    if not _rows:
+                        return
+                    st.caption(f"　**{_title}**")
+                    _n = max(len(r) for r in _rows)
+                    _cells = []
+                    for _row in _rows:
+                        for _i in range(_n):
+                            _c = _row[_i] if _i < len(_row) else None
+                            if _c is None:
+                                _cells.append(
+                                    '<div style="min-height:42px"></div>')
+                                continue
+                            if _c["status"] == "unknown":
+                                _cells.append(
+                                    '<div style="background:#2b2b2b;'
+                                    'border-radius:8px;min-height:42px;'
+                                    'opacity:0.5"></div>')
+                                continue
+                            _bg = _ZONE.get(_c["zone"], "#eee")
+                            _op = "1" if _c["status"] == "seen" else "0.45"
+                            _ppl = "".join(_FACE.get(x, "🐇")
+                                           for x in _c["who"])
                             _cells.append(
-                                '<div style="background:#2b2b2b;border-radius:8px;'
-                                'min-height:44px;opacity:0.55"></div>')
-                            continue
-                        _bg = _ZONE.get(_c["zone"], "#eee")
-                        _op = "1" if _stt == "seen" else "0.5"
-                        _ppl = "".join(_FACE.get(x, "🐇") for x in _c["who"])
-                        _cells.append(
-                            f'<div style="background:{_bg};opacity:{_op};'
-                            'border:1px solid #ddd;border-radius:8px;'
-                            'padding:3px;min-height:44px;text-align:center">'
-                            f'<div style="font-size:0.95rem">{_c["icon"]}</div>'
-                            f'<div style="font-size:0.58rem;color:#444">{_c["name"]}</div>'
-                            + (f'<div style="font-size:0.7rem">{_ppl}</div>'
-                               if _ppl else "") + "</div>")
-                st.markdown(
-                    f'<div style="display:grid;grid-template-columns:'
-                    f'repeat({_w_n},1fr);gap:3px;">' + "".join(_cells)
-                    + "</div>", unsafe_allow_html=True)
+                                f'<div style="background:{_bg};opacity:{_op};'
+                                'border:1px solid #ddd;border-radius:8px;'
+                                'padding:3px;min-height:42px;text-align:center">'
+                                f'<div style="font-size:0.92rem">{_c["icon"]}</div>'
+                                f'<div style="font-size:0.56rem;color:#444">'
+                                f'{_c["name"]}</div>'
+                                + (f'<div style="font-size:0.68rem">{_ppl}</div>'
+                                   if _ppl else "") + "</div>")
+                    st.markdown(
+                        f'<div style="display:grid;grid-template-columns:'
+                        f'repeat({_n},1fr);gap:3px;">' + "".join(_cells)
+                        + "</div>", unsafe_allow_html=True)
+
+                _draw(_maps.get("outside"), "동네")
+                _draw(_maps.get("inside"), "몰랑이네 집 안")
                 st.caption("　진하면 가본 곳 · 흐리면 들어서 아는 곳 · 검으면 아직 모름")
         except Exception:
             pass
