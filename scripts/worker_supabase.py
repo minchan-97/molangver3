@@ -266,6 +266,20 @@ def main(mode):
                             _SI3(store.sb), state.last_topic,
                             api_key=os.environ.get('OPENAI_API_KEY'))
                         _vp.save(store.sb, _who)
+                    # 세계 지도 — 다녀온 곳은 또렷해지고,
+                    # 들은 곳은 흐리게 드러난다
+                    try:
+                        import worldmap as _wm
+                        _w = _wm.load(store.sb)
+                        for _n, _v2 in _who.items():
+                            if _v2.get('where'):
+                                _wm.hear_of(_w, _v2['where'], _n)
+                        if _born:
+                            _wm.hear_of(_w, _born, '마을')
+                        _wm.save(store.sb, _w)
+                    except Exception:
+                        pass
+
                     out['village'] = {
                         'places': len(_vil.get('places') or {}),
                         'born': _born, 'talked': _talked,
@@ -280,6 +294,18 @@ def main(mode):
                         out['home'] = {'skip': '여행 중'}
                     else:
                         out['home'] = _home.tick(store.sb, state)
+                        try:
+                            import worldmap as _wm2
+                            _w2 = _wm2.load(store.sb)
+                            _r = (out['home'] or {}).get('molang')
+                            if _r:
+                                _wm2.visit(_w2, _r, 'molang')
+                            _p = (out['home'] or {}).get('piupiu')
+                            if _p:
+                                _wm2.hear_of(_w2, _p, '피우피우')
+                            _wm2.save(store.sb, _w2)
+                        except Exception:
+                            pass
                 except Exception as e:
                     out['home'] = {'error': str(e)[:120]}
 
@@ -293,6 +319,19 @@ def main(mode):
                         state, 'moods', None) else {}
                     _went = _land.maybe_go(_ld, state, _last_mood)
                     _land.save(store.sb, _ld)
+                    # 다녀온 바깥은 세계 지도에서 또렷해진다
+                    try:
+                        import worldmap as _wm3
+                        _w3 = _wm3.load(store.sb)
+                        if _born:
+                            _wm3.hear_of(_w3, _born.get('kind'), '생김')
+                        if _went:
+                            _wm3.visit(_w3, (_went.get('kind')
+                                             if isinstance(_went, dict)
+                                             else _went), 'molang')
+                        _wm3.save(store.sb, _w3)
+                    except Exception:
+                        pass
                     if _went:
                         state.outings = (getattr(state, 'outings', []) or [])[-40:] + [{
                             'at': time.time(), 'kind': _went['place']['kind'],
