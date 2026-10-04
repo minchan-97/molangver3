@@ -364,6 +364,73 @@ def stir(state, home: dict, who: str, room: str, moved_from: str = None,
     return bumped[:4]
 
 
+def outside_tick(sb, h: dict, state, mode: str = "hourly",
+                 rng=None, log=print) -> dict:
+    """
+    바깥에 나가 **1~2회차 머문다.**
+
+    예전에는 그 회차 안에 다녀와서, 지도에서는 늘 집 안에만 있는 것처럼
+    보였다. 이제는 나가면 거기 있고, 돌아와야 집에 있다.
+
+    규칙
+      · 평소엔 자기 집에 머물 확률이 높다
+      · 심심하거나 들뜨면 나갈 확률이 올라간다
+      · **밤에는 무조건 집으로** 돌아온다
+      · 피우피우는 자기 판단으로 움직이되, 몰랑이를 따라나서기도 한다
+    """
+    import random as _r
+    rng = rng or _r.Random(time.time_ns())
+    out = h.setdefault("outside", {})
+
+    if mode == "nightly":
+        came = [f"{w}({v.get('place')})" for w, v in list(out.items())]
+        if came:
+            out.clear()
+            log(f"  🌙 {', '.join(came)} 집에 돌아왔다")
+        return {"home_by_night": came}
+
+    mood = ((getattr(state, "moods", None) or [{}])[-1] or {})
+    bored = mood.get("name") in ("심심함", "들뜸")
+
+    back = []
+    for who in list(out):
+        out[who]["left"] = int(out[who].get("left", 1)) - 1
+        if out[who]["left"] <= 0:
+            back.append(f"{who}({out[who]['place']})")
+            out.pop(who)
+    if back:
+        log(f"  🏠 {', '.join(back)} 에서 돌아왔다")
+
+    try:
+        import land as _ld
+        places = [p.get("kind") for p in (_ld.load(sb).get("places") or [])
+                  if p.get("kind")]
+    except Exception:
+        places = []
+
+    went = {}
+    if places and "molang" not in out:
+        if rng.random() < (0.45 if bored else 0.12):
+            where = rng.choice(places)
+            out["molang"] = {"place": where, "left": rng.randint(1, 2)}
+            went["molang"] = where
+            log(f"  🚶 몰랑이가 {where}에 나갔다 ({out['molang']['left']}회차)")
+
+    if places and "piupiu" not in out:
+        if "molang" in out and rng.random() < 0.55:
+            out["piupiu"] = dict(out["molang"])
+            went["piupiu"] = out["piupiu"]["place"]
+            log("  🐤 피우피우도 따라나섰다")
+        elif rng.random() < (0.3 if bored else 0.08):
+            where = rng.choice(places)
+            out["piupiu"] = {"place": where, "left": rng.randint(1, 2)}
+            went["piupiu"] = where
+            log(f"  🐤 피우피우가 {where}에 나갔다")
+
+    return {"outside": {k: v["place"] for k, v in out.items()},
+            "went": went, "back": back}
+
+
 def tick(sb, state, piu_interests: dict = None, rng=None, log=print) -> dict:
     """집에서 일어나는 한 회차. 관심 → 이동 → 머묾 → 자극 → 꾸미기."""
     rng = rng or random.Random(time.time_ns())
