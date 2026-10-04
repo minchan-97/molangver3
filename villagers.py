@@ -147,16 +147,29 @@ def walk(sb, who: dict, vil: dict, rng=None, log=print) -> dict:
     """
     rng = rng or random.Random(time.time_ns())
     places = list((vil.get("places") or {}))
+    # **바다·숲 같은 바깥도 간다.**
+    # 자기 집과 몰랑이네만 오가면 지도가 영영 안 넓어진다.
+    try:
+        import land as _ld
+        places += [p.get("kind") for p in (_ld.load(sb).get("places") or [])
+                   if p.get("kind")]
+    except Exception:
+        pass
     if not places:
         return {}
     moved = {}
     for name, v in who.items():
         p = PEOPLE.get(name) or {}
-        if rng.random() > 0.35:
+        if rng.random() > 0.45:
             continue
         here = v.get("where") or p.get("home")
         # 미피는 집에서 먼 데는 안 간다
         cand = [x for x in places if x != here]
+        # 안 가본 곳이 더 끌린다 — 그래야 동네가 넓어진다
+        been = set((v.get("been") or []))
+        fresh = [x for x in cand if x not in been]
+        if fresh and rng.random() < 0.6:
+            cand = fresh
         if name == "미피":
             import village as _vg
             cand = [x for x in cand
@@ -164,6 +177,9 @@ def walk(sb, who: dict, vil: dict, rng=None, log=print) -> dict:
         if not cand:
             continue
         v["where"] = rng.choice(cand)
+        v.setdefault("been", [])
+        if v["where"] not in v["been"]:
+            v["been"].append(v["where"])
         moved[name] = v["where"]
 
     # 커플은 대개 붙어 다닌다 (가끔 따로)
