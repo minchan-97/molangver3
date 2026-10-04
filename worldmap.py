@@ -216,8 +216,20 @@ def compose(sb) -> dict:
     return {"outside": outside, "where": where, "pinkos": pinkos}
 
 
+def _width_for(n: int) -> int:
+    """
+    **곳이 늘면 가로도 늘어난다.**
+    늘 4칸이면 곳이 스물이 됐을 때 세로로 다섯 줄이 되어 길쭉해진다.
+    대략 정사각형이 되게 가로를 잡되, 너무 넓어지지 않게 6칸에서 멈춘다.
+    """
+    import math
+    if n <= 4:
+        return max(2, n)
+    return min(6, int(math.ceil(math.sqrt(n))))
+
+
 def _to_rows(grid: dict, where: dict, w: dict, pinkos: dict = None,
-             width: int = 4) -> list:
+             width: int = 0) -> list:
     """
     **빈틈 없는 사각형 한 장으로.**
 
@@ -230,6 +242,7 @@ def _to_rows(grid: dict, where: dict, w: dict, pinkos: dict = None,
         return []
     # 가까운 것끼리 이웃하도록, 원래 좌표 순서를 지킨 채 나열
     items = [grid[k] for k in sorted(grid)]
+    width = width or _width_for(len(items))
     out, row = [], []
     for cell in items:
         st = status(w, cell["name"])
