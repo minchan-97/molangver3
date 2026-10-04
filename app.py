@@ -495,9 +495,11 @@ with st.sidebar:
                     for _i in range(_n):
                         _c = _row[_i] if _i < len(_row) else None
                         if _c is None:
+                            # 아직 아무것도 없는 자리 — 세계의 가장자리
                             _cells.append(
-                                '<div style="background:#f2f2f2;'
-                                'border-radius:6px;min-height:52px"></div>')
+                                '<div style="background:#e4e4e4;'
+                                'border:1px dashed #cfcfcf;border-radius:6px;'
+                                'min-height:52px"></div>')
                             continue
                         if _c["status"] == "unknown":
                             _cells.append(
