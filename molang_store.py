@@ -324,6 +324,7 @@ class SupabaseIdentity:
     # ---------- 사실 갱신 ----------
 
     def _reinforce_or_add(self, fact: str, source: str = 'user',
+                          speaker: str = '',
                           step: float = 0.25):
         fact = fact.strip()
         if not fact:
@@ -369,9 +370,19 @@ class SupabaseIdentity:
         if kind == 'state':
             expires = (datetime.now(KST) + TTL['state']).isoformat()
 
+        # 이 말이 **누구에 대한 것인지**를 함께 남긴다.
+        # owner(저장소)와 about(대상)은 다르다. 섞으면 "부산 일광에 산다" 가
+        # 자기 사실처럼 읽힌다.
+        try:
+            import aboutness as _ab
+            _about, _why = _ab.judge(fact, source, speaker or "")
+        except Exception:
+            _about, _why = "unknown", ""
+
         row = {
             'text': fact,
             'norm_key': normalize(fact),
+            'about': _about,
             'kind': kind,
             'strength': 0.6,
             'trust': 'derived',        # 새 사실은 절대 human이 아니다
