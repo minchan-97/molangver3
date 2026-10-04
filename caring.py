@@ -174,14 +174,36 @@ def fading_belief(sb) -> dict | None:
 
 
 def confirm_belief(sb, fid: int, yes: bool) -> bool:
-    """맞다고 하면 다시 굳고, 아니라고 하면 내려놓는다."""
+    """
+    맞다고 하면 다시 굳고, 아니라고 하면 내려놓는다.
+
+    그리고 **같은 사실에 대한 다른 질문도 함께 닫는다.**
+    예전에는 누른 하나만 처리되어, 같은 걸 묻는 질문이 넷 더 남아
+    답한 뒤에도 계속 떴다.
+    """
+    ok = False
     try:
-        if yes:
-            sb.table("molang_facts").update(
-                {"strength": 1.0}).eq("id", fid).execute()
-        else:
-            sb.table("molang_facts").update(
-                {"strength": 0.05}).eq("id", fid).execute()
-        return True
+        from datetime import datetime, timezone
+        sb.table("molang_facts").update({
+            "strength": 1.0 if yes else 0.05,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }).eq("id", fid).execute()
+        ok = True
     except Exception:
         return False
+
+    # 같은 사실을 묻던 다른 질문들도 닫는다
+    try:
+        from datetime import datetime, timezone
+        rows = (sb.table("molang_outbox").select("id,payload")
+                .eq("rule", "confirm").is_("sent_at", "null")
+                .limit(50).execute().data) or []
+        same = [r["id"] for r in rows
+                if (r.get("payload") or {}).get("fact_id") == fid]
+        if same:
+            sb.table("molang_outbox").update(
+                {"sent_at": datetime.now(timezone.utc).isoformat(),
+                 "notified": True}).in_("id", same).execute()
+    except Exception:
+        pass
+    return ok
