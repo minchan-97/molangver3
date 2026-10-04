@@ -158,6 +158,8 @@ def main(mode):
                           'observations': len(state.observations)}
 
         cyc = None
+        _world_todo = []        # 이 회차에 드러난 곳들 (끝에 한 번 저장)
+
         if mode in ('hourly', 'all'):
             # 조용한 생각은 LLM 을 안 부른다 → 자주 돌려도 비용이 없다.
             # 사람도 늘 생각하지만 그걸 매번 문장으로 만들지는 않는다.
@@ -268,17 +270,14 @@ def main(mode):
                         _vp.save(store.sb, _who)
                     # 세계 지도 — 다녀온 곳은 또렷해지고,
                     # 들은 곳은 흐리게 드러난다
-                    try:
-                        import worldmap as _wm
-                        _w = _wm.load(store.sb)
-                        for _n, _v2 in _who.items():
-                            if _v2.get('where'):
-                                _wm.hear_of(_w, _v2['where'], _n)
-                        if _born:
-                            _wm.hear_of(_w, _born, '마을')
-                        _wm.save(store.sb, _w)
-                    except Exception:
-                        pass
+                    # 세계 지도는 **회차 끝에 한 번만** 저장한다.
+                    # 전에는 마을·집·바깥에서 각자 불러와 각자 저장해서,
+                    # 나중 저장이 앞의 것을 덮어썼다 (가본 곳이 다 지워졌다).
+                    for _n, _v2 in _who.items():
+                        if _v2.get('where'):
+                            _world_todo.append(('heard', _v2['where'], _n))
+                    if _born:
+                        _world_todo.append(('heard', _born, '마을'))
 
                     out['village'] = {
                         'places': len(_vil.get('places') or {}),
@@ -332,18 +331,16 @@ def main(mode):
                             _pk.save(store.sb, _p)
                         except Exception as _pe:
                             out['pinko'] = {'error': str(_pe)[:80]}
-                        try:
-                            import worldmap as _wm2
-                            _w2 = _wm2.load(store.sb)
-                            _r = (out['home'] or {}).get('molang')
-                            if _r:
-                                _wm2.visit(_w2, _r, 'molang')
-                            _p = (out['home'] or {}).get('piupiu')
-                            if _p:
-                                _wm2.hear_of(_w2, _p, '피우피우')
-                            _wm2.save(store.sb, _w2)
-                        except Exception:
-                            pass
+                        _r = (out.get('home') or {}).get('molang')
+                        if _r:
+                            _world_todo.append(('seen', _r, 'molang'))
+                        _p2 = (out.get('home') or {}).get('piupiu')
+                        if _p2:
+                            _world_todo.append(('heard', _p2, '피우피우'))
+                        for _wh, _pl in (_away or {}).items():
+                            _world_todo.append(
+                                ('seen' if _wh == 'molang' else 'heard',
+                                 _pl, _wh))
                 except Exception as e:
                     out['home'] = {'error': str(e)[:120]}
 
@@ -357,19 +354,13 @@ def main(mode):
                         state, 'moods', None) else {}
                     _went = _land.maybe_go(_ld, state, _last_mood)
                     _land.save(store.sb, _ld)
-                    # 다녀온 바깥은 세계 지도에서 또렷해진다
-                    try:
-                        import worldmap as _wm3
-                        _w3 = _wm3.load(store.sb)
-                        if _born:
-                            _wm3.hear_of(_w3, _born.get('kind'), '생김')
-                        if _went:
-                            _wm3.visit(_w3, (_went.get('kind')
-                                             if isinstance(_went, dict)
-                                             else _went), 'molang')
-                        _wm3.save(store.sb, _w3)
-                    except Exception:
-                        pass
+                    if _born:
+                        _world_todo.append(('heard', _born.get('kind'), '생김'))
+                    if _went:
+                        _world_todo.append(
+                            ('seen', (_went.get('kind')
+                                      if isinstance(_went, dict) else _went),
+                             'molang'))
                     if _went:
                         state.outings = (getattr(state, 'outings', []) or [])[-40:] + [{
                             'at': time.time(), 'kind': _went['place']['kind'],
@@ -577,6 +568,23 @@ def main(mode):
                 pass
             store.record_reflection(entry)
             out['reflection'] = entry
+
+        # 이 회차에 드러난 곳들을 한 번에 적는다
+        try:
+            if _world_todo:
+                import worldmap as _wmf
+                _wf = _wmf.load(store.sb)
+                for _kind, _place, _who3 in _world_todo:
+                    if not _place:
+                        continue
+                    if _kind == 'seen':
+                        _wmf.visit(_wf, _place, _who3)
+                    else:
+                        _wmf.hear_of(_wf, _place, _who3)
+                _wmf.save(store.sb, _wf)
+                out['world'] = _wmf.describe(_wf)
+        except Exception as _we:
+            out['world'] = {'error': str(_we)[:80]}
 
         store.push_state(state, mode)
         som_meta = out.get('topology_night') or out.get('topology') or {}
