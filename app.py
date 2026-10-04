@@ -128,7 +128,12 @@ def safe(widget, *args, key: str = None, **kwargs):
 if not st.session_state.get("_nudge_checked"):
     st.session_state["_nudge_checked"] = True
     try:
-        _waiting = outbox.pending(sb, 1)   # 한 번에 한 마디만
+        # 답할 것이 있는 말(묻는 말)은 대화창에 띄우지 않는다.
+        # 띄우면서 바로 '전했다'로 표시해 버리면, 사이드바에서 사라져
+        # **답할 기회가 없어진다.** 그 셋은 사이드바에서 버튼으로 답한다.
+        ASKS = ("peek", "waiting", "confirm")
+        _waiting = [p for p in outbox.pending(sb, 3)
+                    if p.get("rule") not in ASKS][:1]
         if _waiting:
             for _w in _waiting:
                 st.session_state.chat.append(("molang", _w["body"], "기쁨"))
