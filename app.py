@@ -500,13 +500,13 @@ with st.sidebar:
                             _c = _row[_i] if _i < len(_row) else None
                             if _c is None:
                                 _cells.append(
-                                    '<div style="min-height:42px"></div>')
+                                    '<div style="min-height:30px"></div>')
                                 continue
                             if _c["status"] == "unknown":
                                 _cells.append(
                                     '<div style="background:#2b2b2b;'
-                                    'border-radius:8px;min-height:42px;'
-                                    'opacity:0.5"></div>')
+                                    'border-radius:6px;min-height:30px;'
+                                    'opacity:0.4"></div>')
                                 continue
                             _bg = _ZONE.get(_c["zone"], "#eee")
                             _op = "1" if _c["status"] == "seen" else "0.45"
@@ -516,16 +516,17 @@ with st.sidebar:
                                 _ppl += "🧑‍🌾"
                             _cells.append(
                                 f'<div style="background:{_bg};opacity:{_op};'
-                                'border:1px solid #ddd;border-radius:8px;'
-                                'padding:3px;min-height:42px;text-align:center">'
-                                f'<div style="font-size:0.92rem">{_c["icon"]}</div>'
-                                f'<div style="font-size:0.56rem;color:#444">'
+                                'border:1px solid #ddd;border-radius:6px;'
+                                'padding:1px;min-height:30px;text-align:center;'
+                                'line-height:1.05">'
+                                f'<div style="font-size:0.72rem">{_c["icon"]}</div>'
+                                f'<div style="font-size:0.46rem;color:#555">'
                                 f'{_c["name"]}</div>'
-                                + (f'<div style="font-size:0.68rem">{_ppl}</div>'
+                                + (f'<div style="font-size:0.54rem">{_ppl}</div>'
                                    if _ppl else "") + "</div>")
                     st.markdown(
                         f'<div style="display:grid;grid-template-columns:'
-                        f'repeat({_n},1fr);gap:3px;">' + "".join(_cells)
+                        f'repeat({_n},1fr);gap:2px;">' + "".join(_cells)
                         + "</div>", unsafe_allow_html=True)
 
                 _draw(_maps.get("outside"), "동네")
@@ -1357,4 +1358,3 @@ if msg or photo:
     if photo:
         st.session_state.photo_key += 1   # 업로더 리셋 → 같은 사진 재반응 방지
     st.rerun()
-
