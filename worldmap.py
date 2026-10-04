@@ -55,7 +55,9 @@ ICON = {
 
 
 def blank() -> dict:
-    return {"seen": {}, "heard": {}}
+    # 자기 집은 가보고 말고 할 것이 없다 — 거기 산다.
+    return {"seen": {"몰랑이네": {"first_at": 0, "n": 1, "by": ["molang"]}},
+            "heard": {}}
 
 
 def load(sb) -> dict:
@@ -66,6 +68,10 @@ def load(sb) -> dict:
             d = rows[0]["data"]
             for k, v in blank().items():
                 d.setdefault(k, v)
+            # 자기 집은 늘 아는 곳이다 (이미 쌓인 것에도 채운다)
+            d.setdefault("seen", {}).setdefault(
+                "몰랑이네", {"first_at": 0, "n": 1, "by": ["molang"]})
+            (d.get("heard") or {}).pop("몰랑이네", None)
             return d
     except Exception:
         pass
@@ -174,20 +180,18 @@ def compose(sb) -> dict:
     except Exception:
         pass
 
-    # ── 바깥: 바다·숲 같은 곳 (마을 옆, 빈 자리에) ──
+    # ── 바깥: 바다·숲 같은 곳 ──
+    # 마을 아래 한 줄에 나란히 둔다. 집들과 섞이지 않게.
     try:
         import land
         l = land.load(sb)
-        taken = set(outside)
         ys = [k[0] for k in outside] or [0]
         row = max(ys) + 1
         for i, p in enumerate(l.get("places") or []):
-            spot = (row, i * 2)
-            while spot in taken:
-                spot = (spot[0], spot[1] + 1)
-            taken.add(spot)
-            outside[spot] = {"name": p.get("kind"), "zone": "land",
-                             "dist": p.get("dist")}
+            if not p.get("kind"):
+                continue
+            outside[(row, i)] = {"name": p["kind"], "zone": "land",
+                                 "dist": p.get("dist")}
     except Exception:
         pass
 
@@ -204,14 +208,19 @@ def compose(sb) -> dict:
 
 
 def _to_rows(grid: dict, where: dict, w: dict, pinkos: dict = None) -> list:
+    """
+    **빈 줄과 빈 칸은 접는다.**
+    격자가 7x7 인데 집이 셋뿐이면 화면이 거의 빈 칸이 된다.
+    실제로 뭔가 있는 줄과 칸만 모아서, 서로의 위치 관계는 지킨 채 좁힌다.
+    """
     if not grid:
         return []
-    ys = [k[0] for k in grid]
-    xs = [k[1] for k in grid]
+    ys = sorted({k[0] for k in grid})
+    xs = sorted({k[1] for k in grid})
     out = []
-    for r in range(min(ys), max(ys) + 1):
+    for r in ys:
         row = []
-        for c in range(min(xs), max(xs) + 1):
+        for c in xs:
             cell = grid.get((r, c))
             if not cell:
                 row.append(None)
@@ -265,4 +274,3 @@ def context_line(w: dict, here: str = "") -> str:
     if heard:
         line += f"\n[가보진 않았지만 들어서 아는 곳] {', '.join(heard[:5])}"
     return line + "\n"
-
