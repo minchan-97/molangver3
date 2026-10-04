@@ -132,3 +132,4 @@ def describe(facts: list) -> str:
           "world": "세상", "unknown": "모름"}
     return " · ".join(f"{KO.get(k, k)} {len(s[k])}"
                       for k in order if s.get(k))
+
