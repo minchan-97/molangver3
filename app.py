@@ -512,6 +512,8 @@ with st.sidebar:
                             _op = "1" if _c["status"] == "seen" else "0.45"
                             _ppl = "".join(_FACE.get(x, "🐇")
                                            for x in _c["who"])
+                            if _c.get("pinko"):
+                                _ppl += "🧑‍🌾"
                             _cells.append(
                                 f'<div style="background:{_bg};opacity:{_op};'
                                 'border:1px solid #ddd;border-radius:8px;'
