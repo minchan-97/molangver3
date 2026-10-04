@@ -22,7 +22,7 @@ import os
 import re
 import urllib.request
 
-MAX_PER_DAY = 6
+MAX_PER_DAY = 8
 TIMEOUT = 8
 
 # 보내면 안 되는 것 — 메시지는 ntfy 서버에 남는다
@@ -43,7 +43,7 @@ def available() -> bool:
 
 
 def send(title: str, body: str, tags: str = "rabbit",
-         click: str = "", log=print) -> dict:
+         click: str = "", actions: str = "", log=print) -> dict:
     """
     알림 하나. 실패해도 회차를 멈추지 않는다.
     """
@@ -65,6 +65,11 @@ def send(title: str, body: str, tags: str = "rabbit",
     }
     if click:
         headers["Click"] = click
+    # 알림에서 바로 누르는 버튼 (최대 3개).
+    # iOS 앱에서는 동작 버튼이 안 먹는 경우가 보고되어 있어,
+    # 늘 '앱에서 보기'(view)를 함께 둔다.
+    if actions:
+        headers["Actions"] = actions.encode("utf-8")
     try:
         req = urllib.request.Request(
             f"{_server()}/{topic}", data=text.encode("utf-8"),
@@ -107,7 +112,7 @@ def push_pending(sb, app_url: str = "", log=print) -> dict:
         # 앱을 열어 봤든 안 봤든, 폰으로 보냈는지는 notified 가 가린다.
         # (그 탓에 쌓인 말이 10건인데 하나도 안 나갔다)
         rows = (sb.table("molang_outbox")
-                .select("id,rule,body,created_at")
+                .select("id,rule,body,payload,created_at")
                 .eq("notified", False)
                 .order("id", desc=True).limit(3).execute().data) or []
     except Exception as e:
@@ -155,11 +160,34 @@ def push_pending(sb, app_url: str = "", log=print) -> dict:
     if not rows:
         return {"sent": 0, "why": "전할 말이 없음(묵은 것은 건너뜀)"}
 
+    # 답을 폰에서 바로 할 수 있게.
+    #
+    # 서비스 키를 알림에 담으면 그 키가 ntfy 서버를 지나간다. 그래서
+    # **안전한 창구**(ANSWER_URL)로만 보낸다. 없으면 버튼 없이 보낸다.
+    answer = (os.environ.get("ANSWER_URL") or "").rstrip("/")
+
+    def _actions(rule, row_id, payload):
+        parts = []
+        if answer and rule == "confirm":
+            fid = (payload or {}).get("fact_id")
+            if fid:
+                parts.append(
+                    f"http, 응 맞아, {answer}/confirm?id={row_id}"
+                    f"&fact={fid}&yes=1, method=POST, clear=true")
+                parts.append(
+                    f"http, 아니야, {answer}/confirm?id={row_id}"
+                    f"&fact={fid}&yes=0, method=POST, clear=true")
+        if app_url:
+            parts.append(f"view, 앱에서 보기, {app_url}")
+        return "; ".join(parts[:3])
+
     done = []
     for r in rows:
         rule = r.get("rule") or ""
         res = send(TITLE.get(rule, "🐰 몰랑이"), r.get("body") or "",
-                   tags=TAG.get(rule, "rabbit"), click=app_url, log=log)
+                   tags=TAG.get(rule, "rabbit"), click=app_url,
+                   actions=_actions(rule, r.get("id"), r.get("payload")),
+                   log=log)
         if not res.get("ok"):
             continue
         try:
@@ -174,4 +202,3 @@ def push_pending(sb, app_url: str = "", log=print) -> dict:
     if done:
         log(f"  📣 알림 {len(done)}건 보냄 ({', '.join(done)})")
     return {"sent": len(done), "rules": done}
-
