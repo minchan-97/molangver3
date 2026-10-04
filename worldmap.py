@@ -54,6 +54,9 @@ ICON = {
 }
 
 
+HOUSE_ROOMS = {"다락", "마당", "부엌", "서재", "창가", "작업방"}
+
+
 def blank() -> dict:
     # 자기 집은 가보고 말고 할 것이 없다 — 거기 산다.
     return {"seen": {"몰랑이네": {"first_at": 0, "n": 1, "by": ["molang"]}},
@@ -201,67 +204,69 @@ def compose(sb) -> dict:
     except Exception:
         pass
 
-    # ── 집 안: 방 여섯 개 ──
-    try:
-        import home as _hm
-        for name, (r, c) in (_hm.layout().get("coords") or {}).items():
-            inside[(r, c)] = {"name": name, "zone": "home"}
-    except Exception:
-        pass
+    # **집 안은 세계 지도에 넣지 않는다.**
+    # '부엌' 이 '미피네' 와 같은 칸에 놓이면 세계가 뭉개진다.
+    # 방 안 어디에 있는지는 '둘의 집' 칸에서 따로 본다.
+    #
+    # 대신 집에 있는 사람은 **몰랑이네**에 모아 표시한다.
+    for who in list(where):
+        if who in HOUSE_ROOMS:
+            where.setdefault("몰랑이네", []).extend(where.pop(who))
 
-    return {"outside": outside, "inside": inside,
-            "where": where, "pinkos": pinkos}
+    return {"outside": outside, "where": where, "pinkos": pinkos}
 
 
-def _to_rows(grid: dict, where: dict, w: dict, pinkos: dict = None) -> list:
+def _to_rows(grid: dict, where: dict, w: dict, pinkos: dict = None,
+             width: int = 4) -> list:
     """
-    **빈 줄과 빈 칸은 접는다.**
-    격자가 7x7 인데 집이 셋뿐이면 화면이 거의 빈 칸이 된다.
-    실제로 뭔가 있는 줄과 칸만 모아서, 서로의 위치 관계는 지킨 채 좁힌다.
+    **빈틈 없는 사각형 한 장으로.**
+
+    SOM 좌표를 그대로 쓰면 7x7 에 몇 칸만 차서 지도가 아니라
+    흩어진 점처럼 보인다. 그래서 서로의 **차례**만 지키고
+    (가까운 것끼리 이웃하게) 네 칸씩 끊어 채운다.
+    한눈에 들어오는 것이 지도의 일이다.
     """
     if not grid:
         return []
-    ys = sorted({k[0] for k in grid})
-    xs = sorted({k[1] for k in grid})
-    out = []
-    for r in ys:
-        row = []
-        for c in xs:
-            cell = grid.get((r, c))
-            if not cell:
-                row.append(None)
-                continue
-            st = status(w, cell["name"])
-            row.append({
-                "name": cell["name"] if st != "unknown" else "",
-                "real": cell["name"],
-                "zone": cell["zone"],
-                "status": st,
-                "icon": ICON.get(cell["name"], "📍") if st != "unknown" else "",
-                "who": where.get(cell["name"], []),
-                "heard_from": (w.get("heard") or {}).get(
-                    cell["name"], {}).get("from", []),
-                "pinko": (pinkos or {}).get(cell["name"]),
-            })
+    # 가까운 것끼리 이웃하도록, 원래 좌표 순서를 지킨 채 나열
+    items = [grid[k] for k in sorted(grid)]
+    out, row = [], []
+    for cell in items:
+        st = status(w, cell["name"])
+        row.append({
+            "name": cell["name"] if st != "unknown" else "",
+            "real": cell["name"],
+            "zone": cell["zone"],
+            "status": st,
+            "icon": ICON.get(cell["name"], "📍") if st != "unknown" else "",
+            "who": where.get(cell["name"], []),
+            "heard_from": (w.get("heard") or {}).get(
+                cell["name"], {}).get("from", []),
+            "pinko": (pinkos or {}).get(cell["name"]),
+        })
+        if len(row) == width:
+            out.append(row)
+            row = []
+    if row:
+        while len(row) < width:
+            row.append(None)
         out.append(row)
     return out
 
 
-def rows(sb, w: dict) -> dict:
+def rows(sb, w: dict) -> list:
     """
-    앱이 그릴 두 장 — 바깥과 집 안.
+    앱이 그릴 한 장 — 동네.
+    집 안은 여기 없다 ('둘의 집' 칸에서 따로 본다).
     모르는 곳은 이름 없이 검은 칸으로.
     """
     comp = compose(sb)
-    return {
-        "outside": _to_rows(comp["outside"], comp["where"], w,
-                            comp.get("pinkos")),
-        "inside": _to_rows(comp["inside"], comp["where"], w),
-    }
+    return _to_rows(comp["outside"], comp["where"], w, comp.get("pinkos"))
 
 
 def describe(w: dict) -> str:
-    s, h = len(w.get("seen") or {}), len(w.get("heard") or {})
+    s = len([k for k in (w.get("seen") or {}) if k not in HOUSE_ROOMS])
+    h = len([k for k in (w.get("heard") or {}) if k not in HOUSE_ROOMS])
     if not s and not h:
         return ""
     out = f"[세계] 가본 곳 {s}곳"
