@@ -29,6 +29,7 @@ WAIT_DAYS = 3.0           # 이만큼 지나야 물어본다
 WAIT_MAX_DAYS = 21.0      # 너무 오래되면 묻지 않는다 (잊은 것이 된다)
 UNSURE_LOW = 0.25         # 이보다 낮으면 거의 잊은 것 — 묻지 않는다
 UNSURE_HIGH = 0.55        # 이보다 높으면 아직 확신한다
+ASK_AGAIN_H = 48          # 답이 없어도 이만큼 지나면 다시 물어볼 수 있다
 
 # "~할 거야" 로 보이는 말들
 PLAN = re.compile(
@@ -93,8 +94,22 @@ def due_plan(sb) -> dict | None:
         return None
     for r in rows:
         d = _days(r.get("created_at"))
-        if WAIT_DAYS <= d <= WAIT_MAX_DAYS:
-            return {"id": r["id"], "text": r["text"], "days": round(d, 1)}
+        if not (WAIT_DAYS <= d <= WAIT_MAX_DAYS):
+            continue
+        # 최근에 이미 물어봤으면 또 묻지 않는다
+        try:
+            from datetime import datetime, timezone, timedelta
+            since = (datetime.now(timezone.utc)
+                     - timedelta(hours=ASK_AGAIN_H)).isoformat()
+            got = (sb.table("molang_outbox").select("payload")
+                   .eq("rule", "waiting").gte("created_at", since)
+                   .limit(20).execute().data) or []
+            if any((g.get("payload") or {}).get("wait_id") == r["id"]
+                   for g in got):
+                continue
+        except Exception:
+            pass
+        return {"id": r["id"], "text": r["text"], "days": round(d, 1)}
     return None
 
 
@@ -105,6 +120,31 @@ def mark_asked(sb, wid: int) -> bool:
         return True
     except Exception:
         return False
+
+
+def _asked_recently(sb, fact_id: int) -> bool:
+    """
+    **이미 물어본 것은 다시 묻지 않는다.**
+
+    예전에는 답하기 전까지 같은 사실이 계속 뽑혀서, 똑같은 질문이
+    다섯 번씩 쌓였다. 답을 안 했다고 매 회차 다시 묻는 것은
+    묻는 게 아니라 조르는 것이다.
+
+    다만 영영 못 묻는 것도 아니다 — 이틀이 지나면 다시 물을 수 있다.
+    """
+    try:
+        from datetime import datetime, timezone, timedelta
+        since = (datetime.now(timezone.utc)
+                 - timedelta(hours=ASK_AGAIN_H)).isoformat()
+        rows = (sb.table("molang_outbox").select("id,payload,created_at")
+                .eq("rule", "confirm").gte("created_at", since)
+                .order("id", desc=True).limit(20).execute().data) or []
+        for r in rows:
+            if (r.get("payload") or {}).get("fact_id") == fact_id:
+                return True
+    except Exception:
+        pass
+    return False
 
 
 def fading_belief(sb) -> dict | None:
@@ -118,14 +158,15 @@ def fading_belief(sb) -> dict | None:
         rows = (sb.table("molang_facts")
                 .select("id,text,strength,updated_at,source")
                 .gte("strength", UNSURE_LOW).lte("strength", UNSURE_HIGH)
-                .order("updated_at").limit(8).execute().data) or []
+                .order("updated_at").limit(12).execute().data) or []
     except Exception:
         return None
     for r in rows:
         t = (r.get("text") or "").strip()
         if len(t) < 8:
             continue
-        # 오래 안 꺼낸 것부터
+        if _asked_recently(sb, r["id"]):
+            continue
         return {"id": r["id"], "text": t,
                 "strength": round(float(r.get("strength") or 0), 2),
                 "days": round(_days(r.get("updated_at")), 1)}
