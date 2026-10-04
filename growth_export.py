@@ -107,6 +107,18 @@ def collect(sb, registry=None, state=None, identity=None) -> dict:
             out["travel"] = _tvx.load(sb)
         except Exception as e:
             out["travel"] = {"_error": str(e)[:60]}
+        try:        # 세계 — 어디를 가봤고 어디를 들어서 아는지
+            import worldmap as _wmx
+            out["world"] = _wmx.load(sb)
+        except Exception as e:
+            out["world"] = {"_error": str(e)[:60]}
+        try:        # 마을과 이웃, 그리고 각 지형에 사는 핀코
+            import village as _vgx, villagers as _vpx, pinko as _pkx
+            out["village"] = _vgx.load(sb)
+            out["villagers"] = _vpx.load(sb)
+            out["pinko"] = _pkx.load(sb)
+        except Exception as e:
+            out["village"] = {"_error": str(e)[:60]}
         out["dreams"] = _rows(sb, "molang_dreams", limit=100)
         out["peer_talks"] = _rows(sb, "molang_peer_talks", limit=100)
         out["purposes"] = _rows(sb, "molang_purposes", limit=50)
@@ -150,6 +162,10 @@ def collect(sb, registry=None, state=None, identity=None) -> dict:
                        ((out.get("home") or {}).get("objects") or {}).values()),
         "drive": out.get("drive"),
         "purposes": len(out.get("purposes") or []),
+        "seen_places": len(((out.get("world") or {}).get("seen")) or {}),
+        "heard_places": len(((out.get("world") or {}).get("heard")) or {}),
+        "pinko_known": len([v for v in (out.get("pinko") or {}).values()
+                            if isinstance(v, dict) and v.get("known")]),
         "trips": len(((out.get("travel") or {}).get("trips")) or []),
         "photos": len(((out.get("travel") or {}).get("photos")) or []),
         "map_nodes": (out.get("map") or {}).get("nodes"),
