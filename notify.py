@@ -111,10 +111,12 @@ def push_pending(sb, app_url: str = "", log=print) -> dict:
         # '앱에서 보여줬다' 는 표시이고, 알림은 그와 다른 일이다.
         # 앱을 열어 봤든 안 봤든, 폰으로 보냈는지는 notified 가 가린다.
         # (그 탓에 쌓인 말이 10건인데 하나도 안 나갔다)
+        # **한 번에 하나만.** 세 건을 한꺼번에 보내면 알림이 쏟아진다.
+        # (실제로 같은 종류가 셋 동시에 와서 읽을 수가 없었다)
         rows = (sb.table("molang_outbox")
                 .select("id,rule,body,payload,created_at")
                 .eq("notified", False)
-                .order("id", desc=True).limit(3).execute().data) or []
+                .order("id", desc=True).limit(6).execute().data) or []
     except Exception as e:
         return {"sent": 0, "why": str(e)[:60]}
     if not rows:
@@ -181,6 +183,19 @@ def push_pending(sb, app_url: str = "", log=print) -> dict:
             parts.append(f"view, 앱에서 보기, {app_url}")
         return "; ".join(parts[:3])
 
+    # 보낼 것은 한 건. 다만 **직전에 보낸 것과 다른 종류**를 고른다.
+    # 흐려진 기억이 많으면 confirm 만 줄줄이 오게 되기 때문이다.
+    last_rule = ""
+    try:
+        got = (sb.table("molang_outbox").select("rule")
+               .eq("notified", True).order("id", desc=True)
+               .limit(1).execute().data) or []
+        last_rule = (got[0].get("rule") if got else "") or ""
+    except Exception:
+        pass
+    other = [r for r in rows if (r.get("rule") or "") != last_rule]
+    rows = [(other or rows)[0]]
+
     done = []
     for r in rows:
         rule = r.get("rule") or ""
@@ -196,8 +211,7 @@ def push_pending(sb, app_url: str = "", log=print) -> dict:
         except Exception:
             pass
         done.append(rule)
-        if _sent_today(sb) >= MAX_PER_DAY:
-            break
+        break
 
     if done:
         log(f"  📣 알림 {len(done)}건 보냄 ({', '.join(done)})")
