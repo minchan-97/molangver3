@@ -575,3 +575,4 @@ if __name__ == '__main__':
     ap.add_argument('--mode', choices=['hourly', 'nightly', 'all'],
                     default='hourly')
     main(ap.parse_args().mode)
+
