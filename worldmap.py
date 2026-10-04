@@ -27,11 +27,18 @@ worldmap.py — 집·바깥·마을을 하나의 지형으로.
 from __future__ import annotations
 import time
 
-# 한 세계의 구역 — 집 안쪽, 집 둘레, 마을
+# 세계는 두 층이다.
+#
+#   바깥  집 세 채와 바다·숲이 **한 동네**에 놓인다.
+#         몰랑이네에서 미피네가 어느 쪽인지, 바다가 얼마나 먼지가 보인다.
+#   집 안  몰랑이네 안의 방 여섯 개. 바깥 지도에 섞으면
+#         '부엌'이 '바다' 옆에 있는 것처럼 보여 세계가 뭉개진다.
+#
+# 둘을 나란히 보여준다 — 하나는 동네, 하나는 그 집 안.
 ZONES = {
-    "home": {"label": "집", "origin": (3, 3)},      # 가운데
-    "land": {"label": "바깥", "origin": (0, 3)},    # 위쪽
-    "village": {"label": "마을", "origin": (6, 2)},  # 아래쪽
+    "village": {"label": "마을", "origin": (0, 0)},
+    "land": {"label": "바깥", "origin": (0, 0)},
+    "home": {"label": "집 안", "origin": (0, 0)},
 }
 
 ICON = {
@@ -118,61 +125,69 @@ def status(w: dict, place: str) -> str:
 # ── 한 장으로 ───────────────────────────────────────────────
 def compose(sb) -> dict:
     """
-    집·바깥·마을을 한 격자에 얹는다. (섬은 빼고 — 먼 곳이다)
-    각 구역의 자기 좌표를 그대로 쓰되, 구역마다 시작점을 옮겨 겹치지 않게.
+    **바깥**: 집 세 채와 바다·숲이 한 동네에.
+    **집 안**: 몰랑이네 방 여섯 개.
+    (섬은 빼고 — 비행기를 타고 가는 먼 곳이다)
     """
-    grid, where = {}, {}
+    outside, inside, where = {}, {}, {}
 
-    # 집 — 방들
+    # 누가 어디 있나
     try:
         import home
-        lay = home.layout()
-        oy, ox = ZONES["home"]["origin"]
-        for name, (r, c) in (lay.get("coords") or {}).items():
-            grid[(oy + r, ox + c)] = {"name": name, "zone": "home"}
         h = home.load(sb)
         for who, room in (h.get("where") or {}).items():
             if room:
                 where.setdefault(room, []).append(who)
     except Exception:
         pass
-
-    # 바깥 — 관심이 쌓여 생긴 곳
     try:
-        import land
-        l = land.load(sb)
-        oy, ox = ZONES["land"]["origin"]
-        for i, p in enumerate(l.get("places") or []):
-            grid[(oy, ox + i * 2)] = {"name": p.get("kind"), "zone": "land",
-                                      "dist": p.get("dist")}
-    except Exception:
-        pass
-
-    # 마을 — 이웃의 집과 함께 만든 곳
-    try:
-        import village, villagers
-        v = village.load(sb)
-        oy, ox = ZONES["village"]["origin"]
-        for name, p in (v.get("places") or {}).items():
-            r, c = p["at"]
-            grid[(oy + r % 3, ox + c % 5)] = {
-                "name": name, "zone": "village", "kind": p.get("kind")}
-        who = villagers.load(sb)
-        for n, x in who.items():
+        import villagers
+        for n, x in villagers.load(sb).items():
             if x.get("where"):
                 where.setdefault(x["where"], []).append(n)
     except Exception:
         pass
 
-    return {"grid": grid, "where": where}
+    # ── 바깥: 마을(집들·함께 만든 곳) ──
+    try:
+        import village
+        v = village.load(sb)
+        for name, p in (v.get("places") or {}).items():
+            r, c = p["at"]
+            outside[(r, c)] = {"name": name, "zone": "village",
+                               "kind": p.get("kind")}
+    except Exception:
+        pass
+
+    # ── 바깥: 바다·숲 같은 곳 (마을 옆, 빈 자리에) ──
+    try:
+        import land
+        l = land.load(sb)
+        taken = set(outside)
+        ys = [k[0] for k in outside] or [0]
+        row = max(ys) + 1
+        for i, p in enumerate(l.get("places") or []):
+            spot = (row, i * 2)
+            while spot in taken:
+                spot = (spot[0], spot[1] + 1)
+            taken.add(spot)
+            outside[spot] = {"name": p.get("kind"), "zone": "land",
+                             "dist": p.get("dist")}
+    except Exception:
+        pass
+
+    # ── 집 안: 방 여섯 개 ──
+    try:
+        import home as _hm
+        for name, (r, c) in (_hm.layout().get("coords") or {}).items():
+            inside[(r, c)] = {"name": name, "zone": "home"}
+    except Exception:
+        pass
+
+    return {"outside": outside, "inside": inside, "where": where}
 
 
-def rows(sb, w: dict) -> list:
-    """
-    앱이 그릴 줄 — 모르는 곳은 이름 없이 검은 칸으로.
-    """
-    comp = compose(sb)
-    grid, where = comp["grid"], comp["where"]
+def _to_rows(grid: dict, where: dict, w: dict) -> list:
     if not grid:
         return []
     ys = [k[0] for k in grid]
@@ -198,6 +213,18 @@ def rows(sb, w: dict) -> list:
             })
         out.append(row)
     return out
+
+
+def rows(sb, w: dict) -> dict:
+    """
+    앱이 그릴 두 장 — 바깥과 집 안.
+    모르는 곳은 이름 없이 검은 칸으로.
+    """
+    comp = compose(sb)
+    return {
+        "outside": _to_rows(comp["outside"], comp["where"], w),
+        "inside": _to_rows(comp["inside"], comp["where"], w),
+    }
 
 
 def describe(w: dict) -> str:
