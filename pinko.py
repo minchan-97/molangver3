@@ -242,3 +242,4 @@ def describe(pk: dict) -> str:
     if not k:
         return ""
     return "[핀코] " + " · ".join(f"{v['name']}({v['place']})" for v in k[:5])
+
