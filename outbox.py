@@ -27,7 +27,7 @@ import os
 from datetime import datetime, timedelta, timezone
 
 KST = timezone(timedelta(hours=9))
-MAX_PER_DAY = 4
+MAX_PER_DAY = 8
 QUIET_HOURS = (0, 7)          # 이 시간대에는 만들지 않는다
 ABSENCE_HOURS = 20            # 이만큼 조용하면 안부
 
@@ -443,4 +443,3 @@ def mark_sent(sb, ids: list[int]):
             {"sent_at": _now().isoformat()}).in_("id", ids).execute()
     except Exception:
         pass
-
