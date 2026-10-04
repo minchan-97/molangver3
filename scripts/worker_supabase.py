@@ -293,7 +293,45 @@ def main(mode):
                     if (_tvchk.load(store.sb) or {}).get('current'):
                         out['home'] = {'skip': '여행 중'}
                     else:
-                        out['home'] = _home.tick(store.sb, state)
+                        _hh = _home.load(store.sb)
+                        # 바깥에 나가 1~2회차 머문다 (밤에는 집으로)
+                        out['outing'] = _home.outside_tick(
+                            store.sb, _hh, state, mode)
+                        _home.save(store.sb, _hh)
+                        _away = (out['outing'] or {}).get('outside') or {}
+                        if 'molang' in _away:
+                            out['home'] = {'skip': f"바깥({_away['molang']})"}
+                        else:
+                            out['home'] = _home.tick(store.sb, state)
+
+                        # 핀코 — 그곳에 사는 친구. 다녀야 알게 된다.
+                        try:
+                            import pinko as _pk, land as _ldp
+                            _p = _pk.load(store.sb)
+                            for _pl in (_ldp.load(store.sb).get('places') or []):
+                                _pk.ensure(_p, _pl.get('kind'))
+                            try:
+                                import village as _vg2
+                                for _nm in ((_vg2.load(store.sb).get('places')
+                                             or {})):
+                                    _pk.ensure(_p, _nm)
+                            except Exception:
+                                pass
+                            for _v in _p.values():
+                                _pk.tick(_v)
+                            _here = _away.get('molang')
+                            _new = _pk.meet(_p, _here) if _here else None
+                            if _here and _pk.at(_p, _here) and state.last_topic:
+                                from molang_store import SupabaseIdentity as _SI4
+                                out['pinko'] = _pk.chat(
+                                    store.sb, _p, _here, '몰랑이',
+                                    _SI4(store.sb), state.last_topic,
+                                    api_key=os.environ.get('OPENAI_API_KEY'))
+                            if _new:
+                                out['pinko_met'] = _new
+                            _pk.save(store.sb, _p)
+                        except Exception as _pe:
+                            out['pinko'] = {'error': str(_pe)[:80]}
                         try:
                             import worldmap as _wm2
                             _w2 = _wm2.load(store.sb)
@@ -575,4 +613,3 @@ if __name__ == '__main__':
     ap.add_argument('--mode', choices=['hourly', 'nightly', 'all'],
                     default='hourly')
     main(ap.parse_args().mode)
-
