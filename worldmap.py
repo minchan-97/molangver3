@@ -187,11 +187,17 @@ def compose(sb) -> dict:
         l = land.load(sb)
         ys = [k[0] for k in outside] or [0]
         row = max(ys) + 1
-        for i, p in enumerate(l.get("places") or []):
+        # 집 자리와 겹치지 않게, 빈 칸을 찾아 나란히 놓는다.
+        # 전에는 같은 칸에 덮어써서 숲이 사라졌다.
+        col = 0
+        for p in (l.get("places") or []):
             if not p.get("kind"):
                 continue
-            outside[(row, i)] = {"name": p["kind"], "zone": "land",
-                                 "dist": p.get("dist")}
+            while (row, col) in outside:
+                col += 1
+            outside[(row, col)] = {"name": p["kind"], "zone": "land",
+                                   "dist": p.get("dist")}
+            col += 1
     except Exception:
         pass
 
