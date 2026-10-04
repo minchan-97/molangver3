@@ -131,13 +131,28 @@ def compose(sb) -> dict:
     """
     outside, inside, where = {}, {}, {}
 
-    # 누가 어디 있나
+    # 누가 어디 있나 — 바깥에 나가 있으면 거기로
+    out_now = {}
     try:
         import home
         h = home.load(sb)
+        out_now = {k: v.get("place") for k, v in (h.get("outside") or {}).items()}
         for who, room in (h.get("where") or {}).items():
-            if room:
+            if room and who not in out_now:
                 where.setdefault(room, []).append(who)
+        for who, place in out_now.items():
+            if place:
+                where.setdefault(place, []).append(who)
+    except Exception:
+        pass
+
+    # 그곳에 사는 핀코 — 알게 된 것만
+    pinkos = {}
+    try:
+        import pinko as _pk
+        for place, v in (_pk.load(sb) or {}).items():
+            if v.get("known"):
+                pinkos[place] = v.get("name")
     except Exception:
         pass
     try:
@@ -184,10 +199,11 @@ def compose(sb) -> dict:
     except Exception:
         pass
 
-    return {"outside": outside, "inside": inside, "where": where}
+    return {"outside": outside, "inside": inside,
+            "where": where, "pinkos": pinkos}
 
 
-def _to_rows(grid: dict, where: dict, w: dict) -> list:
+def _to_rows(grid: dict, where: dict, w: dict, pinkos: dict = None) -> list:
     if not grid:
         return []
     ys = [k[0] for k in grid]
@@ -210,6 +226,7 @@ def _to_rows(grid: dict, where: dict, w: dict) -> list:
                 "who": where.get(cell["name"], []),
                 "heard_from": (w.get("heard") or {}).get(
                     cell["name"], {}).get("from", []),
+                "pinko": (pinkos or {}).get(cell["name"]),
             })
         out.append(row)
     return out
@@ -222,7 +239,8 @@ def rows(sb, w: dict) -> dict:
     """
     comp = compose(sb)
     return {
-        "outside": _to_rows(comp["outside"], comp["where"], w),
+        "outside": _to_rows(comp["outside"], comp["where"], w,
+                            comp.get("pinkos")),
         "inside": _to_rows(comp["inside"], comp["where"], w),
     }
 
