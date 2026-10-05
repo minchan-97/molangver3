@@ -131,7 +131,7 @@ if not st.session_state.get("_nudge_checked"):
         # 답할 것이 있는 말(묻는 말)은 대화창에 띄우지 않는다.
         # 띄우면서 바로 '전했다'로 표시해 버리면, 사이드바에서 사라져
         # **답할 기회가 없어진다.** 그 셋은 사이드바에서 버튼으로 답한다.
-        ASKS = ("peek", "waiting", "confirm")
+        ASKS = ("peek", "waiting", "confirm", "unsure")
         _waiting = [p for p in outbox.pending(sb, 3)
                     if p.get("rule") not in ASKS][:1]
         if _waiting:
@@ -318,7 +318,8 @@ with st.sidebar:
                 _left = len(_asks) - 1
 
                 _KIND = {"peek": "👀 밖이 궁금해", "waiting": "⏳ 그거 어떻게 됐어?",
-                         "confirm": "❓ 이거 맞아?", "peer": "🐤 피우피우랑",
+                         "confirm": "❓ 이거 맞아?", "unsure": "🤔 이거 맞아?",
+                         "peer": "🐤 피우피우랑",
                          "dream": "🌙 간밤의 꿈", "reminisce": "💭 문득 생각났는데",
                          "new_finding": "🔎 이런 걸 찾았어",
                          "mood": "☁️ 요즘 이래", "grew": "🌱 생각이 자랐어",
@@ -340,7 +341,7 @@ with st.sidebar:
                         extra()
                     st.rerun()
 
-                if _rule == "confirm":
+                if _rule in ("confirm", "unsure"):
                     _c1, _c2, _c3 = st.columns(3)
                     _fid = _pay.get("fact_id")
                     with _c1:
@@ -1359,4 +1360,3 @@ if msg or photo:
     if photo:
         st.session_state.photo_key += 1   # 업로더 리셋 → 같은 사진 재반응 방지
     st.rerun()
-
