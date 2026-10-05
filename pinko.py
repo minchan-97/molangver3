@@ -196,6 +196,16 @@ def chat(sb, pk: dict, place: str, who: str, ident, topic: str,
         return None
     knows = [f["text"][:60] for f in recall(v, topic)]
 
+    # **둘이 함께 기억하는 것**을 꺼내 온다.
+    # 이게 없으면 "그런 얘기 한 적 없다" 가 되어 관계가 쌓이지 않는다.
+    bond_line = ""
+    try:
+        import bonds as _bd
+        _b = _bd.load(sb)
+        bond_line = _bd.context_line(_b, who, v["name"], topic)
+    except Exception:
+        _b = None
+
     line = None
     if api_key:
         try:
@@ -203,6 +213,7 @@ def chat(sb, pk: dict, place: str, who: str, ident, topic: str,
             c = OpenAI(api_key=api_key)
             sysmsg = (
                 f"너는 '{v['name']}'. {v['persona']} {place}에 산다.\n"
+                + bond_line
                 + (f"네가 아는 것: {'; '.join(knows)}\n" if knows else "")
                 + "규칙: 반말, 한 문장, 이모지 없음. "
                   "네 일과 네가 사는 곳에서 나온 말을 해라. "
@@ -219,6 +230,15 @@ def chat(sb, pk: dict, place: str, who: str, ident, topic: str,
         line = f"{topic}? 여기선 그런 얘기 잘 안 하는데."
 
     hear(v, f"{who}가 {topic} 얘기를 했다", who)
+    # 함께 기억한다 — 양쪽이 같은 것을 본다
+    try:
+        import bonds as _bd2
+        _b2 = _b if _b is not None else _bd2.load(sb)
+        _bd2.remember(_b2, who, v["name"], topic,
+                      said_b=line, place=place)
+        _bd2.save(sb, _b2)
+    except Exception:
+        pass
     try:
         ident._reinforce_or_add(f"{v['name']}는 {line[:60]}",
                                 source="village")
@@ -242,4 +262,3 @@ def describe(pk: dict) -> str:
     if not k:
         return ""
     return "[핀코] " + " · ".join(f"{v['name']}({v['place']})" for v in k[:5])
-
