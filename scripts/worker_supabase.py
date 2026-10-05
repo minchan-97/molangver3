@@ -548,6 +548,15 @@ def main(mode):
             except Exception as e:
                 out['fade'] = {'error': str(e)[:100]}
 
+            try:    # 오래 안 본 사이는 옅어진다 (바닥은 있다)
+                import bonds as _bn
+                _bb = _bn.load(store.sb)
+                if _bn.fade(_bb):
+                    _bn.save(store.sb, _bb)
+                out['bonds'] = _bn.describe(_bb)
+            except Exception:
+                pass
+
             try:        # 낮에 못 다룬 것이 겹쳐 꿈이 된다 (사실이 되지는 않는다)
                 import dream as _dream
                 from molang_store import SupabaseIdentity
