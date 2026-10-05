@@ -595,6 +595,14 @@ def main(mode):
         except Exception as _we:
             out['world'] = {'error': str(_we)[:80]}
 
+        # 무너지고 있는지 지켜본다 (막는 일과 재는 일을 나눈다)
+        try:
+            import vitals as _vt
+            out['vitals'] = _vt.check(store.sb, state)
+            _vt.history_append(store.sb, out['vitals'])
+        except Exception as _ve:
+            out['vitals'] = {'error': str(_ve)[:80]}
+
         store.push_state(state, mode)
         som_meta = out.get('topology_night') or out.get('topology') or {}
         if som_meta.get('trained'):
