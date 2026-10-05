@@ -217,6 +217,19 @@ def converse(sb, mol_ident, piu_ident, seen: dict, api_key=None,
         log(f"  대화 저장 실패: {str(e)[:80]}")
 
     log(f"  피우피우와: {talk['molang'][:30]} / {talk['piupiu'][:30]}")
+    # 피우피우와도 **함께 기억한다.**
+    # 같이 사는 사이인데 관계가 안 쌓이면 매번 초면이 된다.
+    try:
+        import bonds as _bd
+        _b = _bd.load(sb)
+        _bd.remember(_b, "몰랑이", "피우피우",
+                     seen.get("topic") or "",
+                     said_a=(talk.get("molang") or "")[:120],
+                     said_b=(talk.get("piupiu") or "")[:120])
+        _bd.save(sb, _b)
+    except Exception:
+        pass
+
     return {"talk": talk, "topic": seen.get("topic")}
 
 
