@@ -223,6 +223,13 @@ def chat(sb, who: dict, name: str, mol_ident, topic: str,
         return None
     p = PEOPLE.get(name) or {}
     knows = [f["text"][:60] for f in recall(v, topic, 2)]
+    bond_line = ""
+    try:
+        import bonds as _bd
+        _b = _bd.load(sb)
+        bond_line = _bd.context_line(_b, "몰랑이", name, topic)
+    except Exception:
+        _b = None
 
     line = None
     if api_key:
@@ -232,6 +239,7 @@ def chat(sb, who: dict, name: str, mol_ident, topic: str,
             sysmsg = (
                 f"너는 '{name}'. {p.get('persona','')}\n"
                 "몰랑이(대왕토끼)와 마을에서 마주쳐 한 마디 나눈다.\n"
+                + bond_line
                 + (f"네가 아는 것: {'; '.join(knows)}\n" if knows else "")
                 + "규칙: 반말, 한 문장, 이모지 없음. "
                   "모르는 것은 모른다고 하고 지어내지 마라. "
@@ -249,6 +257,13 @@ def chat(sb, who: dict, name: str, mol_ident, topic: str,
                 else f"{topic} 얘기구나.")
 
     hear(v, f"몰랑이가 {topic} 얘기를 했다", "몰랑이")
+    try:
+        import bonds as _bd2
+        _b2 = _b if _b is not None else _bd2.load(sb)
+        _bd2.remember(_b2, "몰랑이", name, topic, said_b=line)
+        _bd2.save(sb, _b2)
+    except Exception:
+        pass
     try:
         mol_ident._reinforce_or_add(f"{name}는 {line[:60]}", source="peer")
     except Exception:
