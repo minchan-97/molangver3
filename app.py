@@ -537,6 +537,20 @@ with st.sidebar:
         except Exception:
             pass
 
+        # 💞 사이 — 누구와 얼마나 가까운가
+        try:
+            import bonds as _bn
+            _bb = _bn.load(sb)
+            _near = _bn.closest(_bb, "몰랑이", 6)
+            if _near:
+                st.markdown("---")
+                st.markdown("### 💞 사이")
+                for _who, _w, _m in _near:
+                    _bar = "●" * max(1, round(_w * 5)) + "○" * (5 - max(1, round(_w * 5)))
+                    st.caption(f"　{_who} {_bar} {_m}번 만남")
+        except Exception:
+            pass
+
         # 🏘️ 마을 — 이웃들이 어디 있나
         try:
             import village as _vgm, villagers as _vpm
