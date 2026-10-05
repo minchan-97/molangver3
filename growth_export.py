@@ -117,6 +117,8 @@ def collect(sb, registry=None, state=None, identity=None) -> dict:
             out["village"] = _vgx.load(sb)
             out["villagers"] = _vpx.load(sb)
             out["pinko"] = _pkx.load(sb)
+            import bonds as _bnx
+            out["bonds"] = _bnx.load(sb)
         except Exception as e:
             out["village"] = {"_error": str(e)[:60]}
         out["dreams"] = _rows(sb, "molang_dreams", limit=100)
@@ -166,6 +168,7 @@ def collect(sb, registry=None, state=None, identity=None) -> dict:
         "heard_places": len(((out.get("world") or {}).get("heard")) or {}),
         "pinko_known": len([v for v in (out.get("pinko") or {}).values()
                             if isinstance(v, dict) and v.get("known")]),
+        "bonds": len(out.get("bonds") or {}),
         "trips": len(((out.get("travel") or {}).get("trips")) or []),
         "photos": len(((out.get("travel") or {}).get("photos")) or []),
         "map_nodes": (out.get("map") or {}).get("nodes"),
