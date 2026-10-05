@@ -207,3 +207,4 @@ def confirm_belief(sb, fid: int, yes: bool) -> bool:
     except Exception:
         pass
     return ok
+
