@@ -97,8 +97,12 @@ def collect_signals(sb, identity=None, registry=None, state=None) -> list[dict]:
             weak = [f for f in identity.learned_facts
                     if 0.2 < (f.get("strength") or 0) < 0.6]
             if weak:
+                # confirm 과 하는 일이 같다 — 흐려진 것을 확인하는 자리.
+                # 그런데 fact_id 가 없으면 앱에서 버튼을 못 붙여
+                # "맞아?" 하고 묻고도 답할 길이 없다. 그래서 함께 싣는다.
                 out.append({"rule": "unsure", "weight": 2,
                             "detail": str(weak[0].get("text"))[:60],
+                            "fact_id": weak[0].get("id"),
                             "n": len(weak)})
         except Exception:
             pass
