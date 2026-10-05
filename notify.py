@@ -132,7 +132,8 @@ def push_pending(sb, app_url: str = "", log=print) -> dict:
              "grew": "🐰 생각이 조금 달라졌어",
              "absence": "🐰 오늘은 어땠어?",
              "waiting": "🐰 그거 어떻게 됐어?",
-             "confirm": "🐰 이거 맞아?"}
+             "confirm": "🐰 이거 맞아?",
+             "unsure": "🐰 이거 맞는지 모르겠어"}
     TAG = {"peer": "hatching_chick", "dream": "crescent_moon",
            "peek": "eyes", "new_finding": "mag", "mood": "cloud",
            "reminisce": "thought_balloon",
@@ -216,4 +217,3 @@ def push_pending(sb, app_url: str = "", log=print) -> dict:
     if done:
         log(f"  📣 알림 {len(done)}건 보냄 ({', '.join(done)})")
     return {"sent": len(done), "rules": done}
-
