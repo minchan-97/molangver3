@@ -302,6 +302,14 @@ def main(mode):
                             out['home'] = {'skip': f"바깥({_away['molang']})"}
                         else:
                             out['home'] = _home.tick(store.sb, state)
+                            try:
+                                import lived as _lv4
+                                from molang_store import (
+                                    SupabaseIdentity as _SI7)
+                                _lv4.from_home(_SI7(store.sb), _hh,
+                                               out.get('home'))
+                            except Exception:
+                                pass
 
                         # 핀코 — 그곳에 사는 친구. 다녀야 알게 된다.
                         try:
@@ -328,6 +336,15 @@ def main(mode):
                                     api_key=os.environ.get('OPENAI_API_KEY'))
                             if _new:
                                 out['pinko_met'] = _new
+                                try:
+                                    import lived as _lv2
+                                    from molang_store import (
+                                        SupabaseIdentity as _SI6)
+                                    _lv2.from_meeting(
+                                        _SI6(store.sb), _new['name'],
+                                        _new['place'])
+                                except Exception:
+                                    pass
                             _pk.save(store.sb, _p)
                         except Exception as _pe:
                             out['pinko'] = {'error': str(_pe)[:80]}
@@ -361,6 +378,13 @@ def main(mode):
                             ('seen', (_went.get('kind')
                                       if isinstance(_went, dict) else _went),
                              'molang'))
+                        # 겪은 것을 자기 사실로 (처음 간 곳 · 자주 간 곳)
+                        try:
+                            import lived as _lv
+                            from molang_store import SupabaseIdentity as _SI5
+                            _lv.from_outing(_SI5(store.sb), _ld, _went)
+                        except Exception:
+                            pass
                     if _went:
                         state.outings = (getattr(state, 'outings', []) or [])[-40:] + [{
                             'at': time.time(), 'kind': _went['place']['kind'],
@@ -563,6 +587,13 @@ def main(mode):
                 out['dream'] = _dream.dream(
                     store.sb, SupabaseIdentity(store.sb), state,
                     os.environ.get('OPENAI_API_KEY'))
+                # 꿈 줄거리는 사실이 아니다. 다만 **깨어도 남은 것**은
+                # 자기에 대한 앎이다.
+                try:
+                    import lived as _lv3
+                    _lv3.from_dream(SupabaseIdentity(store.sb), out['dream'])
+                except Exception:
+                    pass
             except Exception as e:
                 out['dream'] = {'error': str(e)[:150]}
 
