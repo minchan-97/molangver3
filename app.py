@@ -537,6 +537,30 @@ with st.sidebar:
         except Exception:
             pass
 
+        # 🧲 자석 낱말 — 무엇 다음에 무엇이 오나 (기존 지도와 나란히)
+        try:
+            _row = (sb.table("molang_markov").select("data")
+                    .eq("id", 1).limit(1).execute().data) or []
+            _mkd = (_row[0].get("data") if _row else {}) or {}
+            _mass = _mkd.get("mass") or {}
+            if _mass:
+                st.markdown("---")
+                st.markdown("### 🧲 자석 낱말")
+                st.caption("　여러 낱말이 자기 다음에 부르는 말일수록 무겁다")
+                for _w, _v in sorted(_mass.items(),
+                                     key=lambda x: -x[1])[:8]:
+                    _bar = "▰" * max(1, round(_v * 6)) + "▱" * (6 - max(1, round(_v * 6)))
+                    st.caption(f"　{_w} {_bar} {_v:.2f}")
+                _tr = _mkd.get("trans") or {}
+                _top = sorted(_mass.items(), key=lambda x: -x[1])[:1]
+                if _top and _top[0][0] in _tr:
+                    import markov_mass as _mkm
+                    _ch = _mkm.chain({"trans": _tr}, _top[0][0], 4)
+                    if len(_ch) > 1:
+                        st.caption("　이어지는 결: " + " → ".join(_ch))
+        except Exception:
+            pass
+
         # 💞 사이 — 누구와 얼마나 가까운가
         try:
             import bonds as _bn
