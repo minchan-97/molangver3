@@ -34,6 +34,28 @@ EPS = 1e-9
 MIN_MASS = 0.15          # 이보다 가벼우면 끌지 못한다
 
 
+MARKOV_RATIO = 0.0        # 0이면 지금 그대로, 1이면 마르코프만.
+                          # **나란히 둔다** — 갈아엎지 않고 섞는 비율만 바꾼다.
+
+
+def masses_with_markov(gmap: dict, facts: list = None,
+                       mk_mass: dict = None, ratio: float = None) -> dict:
+    """
+    기존 질량과 **자석 낱말**(마르코프)을 섞는다.
+
+    기존 지도를 건드리지 않는 이유:
+      · 둘을 견줘야 어느 쪽이 나은지 알 수 있다
+      · 나쁘면 되돌릴 수 있다
+      · 연속성 측정이 지금 구조에 기대고 있다
+    """
+    base = masses(gmap, facts)
+    r = MARKOV_RATIO if ratio is None else ratio
+    if not mk_mass or r <= 0:
+        return base
+    import markov_mass as _mk
+    return _mk.blend(base, mk_mass, r)
+
+
 def masses(gmap: dict, facts: list = None) -> dict:
     """
     낱말의 질량 = 친숙도.
@@ -177,4 +199,3 @@ def context_line(gmap: dict, mass: dict, clusters: list, words: list,
                          f"{', '.join([h['branch']] + [r[0] for r in h['rivals']])} "
                          "사이에서 자리를 못 잡음 — 단정하지 말 것)")
     return "\n".join(lines)
-
