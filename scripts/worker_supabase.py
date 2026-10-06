@@ -572,6 +572,22 @@ def main(mode):
             except Exception as e:
                 out['fade'] = {'error': str(e)[:100]}
 
+            try:    # 자석 낱말 — 무엇 다음에 무엇이 오나 (기존 지도와 나란히)
+                import markov_mass as _mk
+                _docs = _mk.collect(store.sb)
+                _m = _mk.count(_docs)
+                _mass = _mk.masses(_m)
+                store.sb.table('molang_markov').upsert(
+                    {'id': 1, 'data': {'mass': _mass,
+                                       'trans': {k: v for k, v in
+                                                 list(_m['trans'].items())[:400]}}},
+                    on_conflict='id').execute()
+                out['markov'] = {
+                    'words': len(_m['trans']),
+                    'top': sorted(_mass.items(), key=lambda x: -x[1])[:6]}
+            except Exception as _me:
+                out['markov'] = {'error': str(_me)[:80]}
+
             try:    # 오래 안 본 사이는 옅어진다 (바닥은 있다)
                 import bonds as _bn
                 _bb = _bn.load(store.sb)
