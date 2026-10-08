@@ -91,7 +91,30 @@ def collect_signals(sb, identity=None, registry=None, state=None) -> list[dict]:
     except Exception:
         pass
 
-    # 3) 오래 확신 못 한 것
+    # 3) **어긋나는 기억** — 둘 다 아는데 어느 쪽인지 모른다.
+    #    흐려진 것(unsure)보다 급하다. 한쪽은 틀렸기 때문이다.
+    if identity is not None:
+        try:
+            import belief_decay as _bdx
+            fs = list(identity.learned_facts)[:120]
+            for i, a in enumerate(fs):
+                ta = a.get("text") or ""
+                for b in fs[i + 1:]:
+                    if not _bdx._opposed(ta, b.get("text") or ""):
+                        continue
+                    out.append({
+                        "rule": "conflict", "weight": 3,
+                        "detail": f'"{ta[:40]}" 랑 "{(b.get("text") or "")[:40]}" '
+                                  "둘 다 알고 있는데, 어느 쪽이 맞아?",
+                        "fact_id": a.get("id"),
+                        "other_id": b.get("id")})
+                    raise StopIteration
+        except StopIteration:
+            pass
+        except Exception:
+            pass
+
+    # 4) 오래 확신 못 한 것
     if identity is not None:
         try:
             weak = [f for f in identity.learned_facts
@@ -274,6 +297,7 @@ TEMPLATES = {
     "peek": "{detail}",
     "waiting": "{detail}",
     "confirm": "{detail}",
+    "conflict": "{detail}",
 }
 
 # 다듬기는 '말투만' 손대게 한다. 화자를 뒤집거나 내용을 빼면 먼저 말 걸기가
@@ -390,7 +414,8 @@ def make(sb, identity=None, registry=None, api_key=None, state=None, log=print):
     try:
         # 계기에 딸린 것(어느 기억인지, 어느 기다림인지)도 함께 남긴다.
         # 그래야 앱에서 "맞아/아니야" 를 눌렀을 때 무엇을 고칠지 안다.
-        _extra = {k: sig[k] for k in ("wait_id", "fact_id", "talk_id")
+        _extra = {k: sig[k] for k in ("wait_id", "fact_id", "talk_id",
+                                      "other_id")
                   if sig.get(k) is not None}
         _row = {"body": body[:500], "rule": sig["rule"],
                 "scheduled_at": _now().isoformat()}
