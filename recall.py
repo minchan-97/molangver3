@@ -63,18 +63,88 @@ class FactRecall:
             self.som = None       # 실패하면 조용히 예전 방식으로 (기억은 지킨다)
 
     # ── 꺼내기 ────────────────────────────────────────────────
-    def recall(self, question: str, k: int = 40) -> list[dict]:
+    def recall(self, question: str, k: int = 40, markov: dict = None) -> list[dict]:
+        """
+        네 가지를 **한 점수로 묶어** 꺼낸다.
+
+        예전에는 '가까움 → 강함 → 최근' 을 그냥 이어붙였다. 그러면
+        가까운 것이 k 개를 다 채워 **최근 것이 들어갈 자리가 없다.**
+        그래서 몇 달 전 사실이 계속 올라오고 어제 한 말은 안 나왔다.
+
+        이제는 곱해서 하나로 본다.
+          가까움   질문과 얼마나 비슷한가 (SOM 격자 + 문장 유사도)
+          강함     얼마나 확신하는가
+          새로움   얼마나 최근에 들어왔거나 쓰였는가
+          이어짐   질문의 낱말에서 **이어지는 낱말**이 들어 있는가 (마르코프)
+
+        마지막이 새로 더한 것이다. '바다' 를 물으면 바다 다음에 오는
+        '파도·소리' 가 든 사실까지 끌어온다. 글자가 안 겹쳐도 이어지면 잡힌다.
+        """
         if not self.facts:
             return []
         if self.som is None or not question:
             return self._by_strength(k)
 
-        near = self._near(question, k)
-        strong = self._by_strength(max(6, k // 4))
-        recent = self.facts[-max(4, k // 6):]
+        import time as _t
+        now = _t.time()
 
+        # 질문에서 이어지는 낱말들 (마르코프)
+        chain = set()
+        if markov:
+            try:
+                import re as _re
+                import markov_mass as _mk
+                for w in _re.findall(r"[가-힣A-Za-z]{2,}", question)[:4]:
+                    for nxt, _p in _mk.next_of(markov, w, 4):
+                        chain.add(nxt)
+            except Exception:
+                pass
+
+        import re as _re2
+        qw = {w for w in _re2.findall(r"[가-힣A-Za-z]{2,}", question)}
+        qstem = {w[:2] for w in qw}
+
+        q = _vec(question)
+        b = self.som.bmu_of(q)
+        by, bx = divmod(b, self.som.gw)
+        node_of = {}
+        for node, idxs in self.assign.items():
+            for i in idxs:
+                node_of[i] = node
+
+        scored = []
+        for i, f in enumerate(self.facts):
+            txt = f.get("text") or ""
+            # 가까움 — **낱말이 겹치는 것이 가장 세다.**
+            # 해시 임베딩은 뜻을 모른다. 그래서 벡터만 쓰면 '바다' 를 물어도
+            # 바다 사실이 안 올라오고 최근 것만 남는다.
+            fw = set(_re2.findall(r"[가-힣A-Za-z]{2,}", txt))
+            hit = len(qw & fw)
+            stem = len(qstem & {w[:2] for w in fw})
+            word = 1.0 + 2.0 * hit + 0.6 * stem
+
+            sim = float(q @ _vec(txt))
+            node = node_of.get(i)
+            if node is not None:
+                ny, nx = divmod(node, self.som.gw)
+                d = abs(ny - by) + abs(nx - bx)
+                near = word * (sim + 1.0 / (1.0 + d))
+            else:
+                near = word * sim
+            # 강함
+            strong = float(f.get("strength") or 0.5)
+            # 새로움 — 최근일수록 1에 가깝다 (30일 반감)
+            age = self._age_days(f, now)
+            fresh = 0.5 + 0.5 * (0.5 ** (age / 30.0))
+            # 이어짐
+            link = 1.3 if (chain and any(c in txt for c in chain)) else 1.0
+
+            scored.append((near * strong * fresh * link, i))
+
+        scored.sort(key=lambda t: -t[0])
         out, seen = [], set()
-        for f in near + strong + recent:      # 가까움 → 강함 → 최근 순
+        for _, i in scored:
+            f = self.facts[i]
             key = f.get("text")
             if key and key not in seen:
                 seen.add(key)
@@ -83,8 +153,29 @@ class FactRecall:
                 break
         return out
 
+    @staticmethod
+    def _age_days(f: dict, now: float) -> float:
+        """얼마나 묵었나. 모르면 중간값으로 둔다."""
+        for key in ("updated_at", "created_at"):
+            v = f.get(key)
+            if not v:
+                continue
+            try:
+                from datetime import datetime, timezone
+                t = datetime.fromisoformat(str(v).replace("Z", "+00:00"))
+                if t.tzinfo is None:
+                    t = t.replace(tzinfo=timezone.utc)
+                return max(0.0, (now - t.timestamp()) / 86400)
+            except Exception:
+                pass
+        return 30.0
+
     def _near(self, question: str, k: int) -> list[dict]:
         """질문 벡터의 최적 노드와 그 이웃 노드에 얹힌 사실들."""
+        import re as _re2
+        qw = {w for w in _re2.findall(r"[가-힣A-Za-z]{2,}", question)}
+        qstem = {w[:2] for w in qw}
+
         q = _vec(question)
         b = self.som.bmu_of(q)
         by, bx = divmod(b, self.som.gw)
