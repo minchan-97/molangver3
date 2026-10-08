@@ -98,12 +98,26 @@ def _topic_tree(registry, topic: str, embed_fn=None, classify_fn=None):
     if not registry.trees:
         return None, None
 
-    # 못 찾으면 **실제로 걸어본 길 중 가장 덜 배운 것**에 붙인다.
-    # 어디든 쌓여야 깊어지되, 안 쓰는 길에 쌓는 것은 버리는 것과 같다.
+    # 못 찾으면 **자주 걷는 길 중 근거가 모자란 곳**에 붙인다.
+    #
+    # 그냥 '가장 덜 배운 곳' 으로 보내면 고르게 퍼지기는 하는데,
+    # 정작 169번 걸은 emotion_analysis 가 근거 11건으로 남는다.
+    # 많이 걷는 길일수록 근거가 받쳐줘야 깊어진다.
+    # 그래서 **걸은 횟수 대비 근거가 적은 쪽**을 먼저 채운다.
     live = [k for k in registry.trees if _is_live(registry, k)]
     pool = live or list(registry.trees)
-    tid = min(pool,
-              key=lambda k: len(getattr(registry.trees[k], "memory", [])))
+
+    def _need(k):
+        t = registry.trees[k]
+        walked = len(getattr(t, "history", []) or [])
+        got = len(getattr(t, "memory", []) or [])
+        # 한 곳에 너무 몰리면 다른 길이 영영 안 깊어진다.
+        # 근거가 쌓일수록 급한 정도가 줄어 자연히 다음 길로 넘어간다.
+        if got >= 60:
+            return 0.0
+        return -((walked + 1) / (got + 1))
+
+    tid = min(pool, key=_need)
     return tid, registry.trees[tid]
 
 
