@@ -72,6 +72,14 @@ class UnifiedIdentity:
             identity_prompt = self.identity.to_system_prompt(question=question)
         except TypeError:
             identity_prompt = self.identity.to_system_prompt()
+        # **무엇을 근거로 했는지 기록에 남긴다.**
+        # 예전에는 맥락에만 넣고 sources 는 빈 채로 저장되어,
+        # "왜 그렇게 답했나" 를 되짚을 때 근거가 하나도 안 보였다.
+        used = []
+        try:
+            used = tree.recall(question, embed_fn=embed_fn, top_k=3)
+        except Exception:
+            used = []
         tree_mem = tree.memory_context(question, embed_fn=embed_fn)
         context_parts = []
         if identity_prompt:
@@ -85,6 +93,8 @@ class UnifiedIdentity:
         rec = tree.traverse(choose_fn=choose_fn, answer_fn=answer_fn,
                             context=full_context)
         rec.context = question   # 감사 로그엔 원 질문만
+        if used and not rec.sources:
+            rec.sources = [(m.get("content") or "")[:120] for m in used]
 
         return {
             "type": type_id,
@@ -165,4 +175,3 @@ class UnifiedIdentity:
         # identity 복원
         mem = IdentityMemory(**blob["identity"])
         return cls(registry=reg, memory=mem)
-
