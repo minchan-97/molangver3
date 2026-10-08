@@ -275,6 +275,17 @@ class SupabaseIdentity:
             tail = f"\n(그 밖에 {more}가지를 더 알고 있지만 지금은 떠오르지 않는다)" if more else ""
             parts.append(f"[네가 축적한 지식]\n{fs}{tail}")
 
+        # **어긋나는 기억은 숨기지 않는다.**
+        # 하나를 조용히 고르면 왜 그렇게 답했는지 기록에 안 남고,
+        # 그건 아는 척에 가깝다. 둘 다 두고 모른다고 말할 수 있게 한다.
+        try:
+            import recall as _rc
+            _cn = _rc.conflict_note(pool)
+            if _cn:
+                parts.append(_cn.rstrip())
+        except Exception:
+            pass
+
         if self._episodic:
             es = "\n".join(f"- {e}" for e in self._episodic)
             parts.append(f"[최근 대화에서 형성된 맥락]\n{es}")
