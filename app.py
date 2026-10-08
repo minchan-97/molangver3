@@ -307,7 +307,7 @@ with st.sidebar:
         # 근거가 쌓였다. 입구는 고쳤지만 이미 쌓인 것은 그대로다.
         try:
             import rehome_memory as _rh, curiosity_growth as _cg
-            _reg = st.session_state.get("registry") or registry
+            _reg = u.registry
             _dead = [k for k in _reg.trees if not _cg._is_live(_reg, k)]
             _stuck = sum(len(getattr(_reg.trees[k], "memory", []) or [])
                          for k in _dead)
