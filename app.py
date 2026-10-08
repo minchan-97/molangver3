@@ -131,7 +131,7 @@ if not st.session_state.get("_nudge_checked"):
         # 답할 것이 있는 말(묻는 말)은 대화창에 띄우지 않는다.
         # 띄우면서 바로 '전했다'로 표시해 버리면, 사이드바에서 사라져
         # **답할 기회가 없어진다.** 그 셋은 사이드바에서 버튼으로 답한다.
-        ASKS = ("peek", "waiting", "confirm", "unsure")
+        ASKS = ("peek", "waiting", "confirm", "unsure", "conflict")
         _waiting = [p for p in outbox.pending(sb, 3)
                     if p.get("rule") not in ASKS][:1]
         if _waiting:
@@ -346,6 +346,7 @@ with st.sidebar:
 
                 _KIND = {"peek": "👀 밖이 궁금해", "waiting": "⏳ 그거 어떻게 됐어?",
                          "confirm": "❓ 이거 맞아?", "unsure": "🤔 이거 맞아?",
+                         "conflict": "⚖️ 어느 쪽이 맞아?",
                          "peer": "🐤 피우피우랑",
                          "dream": "🌙 간밤의 꿈", "reminisce": "💭 문득 생각났는데",
                          "new_finding": "🔎 이런 걸 찾았어",
@@ -368,7 +369,26 @@ with st.sidebar:
                         extra()
                     st.rerun()
 
-                if _rule in ("confirm", "unsure"):
+                if _rule == "conflict":
+                    # 둘 다 알고 있는데 어긋난다 — 한쪽을 고르면
+                    # 그쪽이 굳고 다른 쪽은 내려놓는다.
+                    _c1, _c2, _c3 = st.columns(3)
+                    _fa = _pay.get("fact_id")
+                    _fb = _pay.get("other_id")
+                    with _c1:
+                        if safe(st.button, "앞엣것", key=uk(f"cf_a{_a.get('id')}")):
+                            _done(lambda: (_fa and _cr.confirm_belief(sb, _fa, True),
+                                           _fb and _cr.confirm_belief(sb, _fb, False)))
+                    with _c2:
+                        if safe(st.button, "뒤엣것", key=uk(f"cf_b{_a.get('id')}")):
+                            _done(lambda: (_fb and _cr.confirm_belief(sb, _fb, True),
+                                           _fa and _cr.confirm_belief(sb, _fa, False)))
+                    with _c3:
+                        if safe(st.button, "둘 다 아냐", key=uk(f"cf_x{_a.get('id')}")):
+                            _done(lambda: (_fa and _cr.confirm_belief(sb, _fa, False),
+                                           _fb and _cr.confirm_belief(sb, _fb, False)))
+
+                elif _rule in ("confirm", "unsure"):
                     _c1, _c2, _c3 = st.columns(3)
                     _fid = _pay.get("fact_id")
                     with _c1:
