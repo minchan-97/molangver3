@@ -5,6 +5,15 @@ on:
     - cron: '17 * * * *'      # 매시 17분
   workflow_dispatch:
 
+# **한 번에 하나만 돌게.**
+# 앞 회차가 안 끝났는데 다음이 시작되면 둘이 동시에 상태를 저장하려 하고,
+# 그러면 organism_state version conflict 가 난다.
+# (실제로 CPU 가 밀리면서 회차가 겹쳐 충돌이 났다)
+# 시간당과 밤 워커가 같은 group 을 쓰므로 둘 사이에서도 겹치지 않는다.
+concurrency:
+  group: molang-worker
+  cancel-in-progress: false
+
 jobs:
   organism:
     runs-on: ubuntu-latest
@@ -24,5 +33,7 @@ jobs:
           # 하고 싶은 말을 폰으로 보내기 (ntfy). 없으면 알림만 건너뛴다.
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
           APP_URL: ${{ secrets.APP_URL }}
-          SEARCH_EVERY: "3"      # 몇 회차에 한 번 검색할지 (나머지는 생각만)
+          # 알림 버튼이 답을 보낼 창구 (answer_api.py). 없으면 버튼만 안 뜬다.
+          ANSWER_URL: ${{ secrets.ANSWER_URL }}
+          SEARCH_EVERY: "2"      # 몇 회차에 한 번 검색할지 (나머지는 생각만)
           MUSING_ROUNDS: "40"    # 한 번 깨어날 때 생각하는 횟수 (비용 0)
