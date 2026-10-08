@@ -44,6 +44,30 @@ def _embed(text):
     return hashed_embedding(text or "", dim=64)
 
 
+def _is_live(registry, tid: str) -> bool:
+    """
+    실제로 걸어본 길인가.
+
+    경로 기록이 있거나, 단계 이름이 한국어로 적힌 것만 산 유형으로 본다.
+    (영어 지시문뿐인 기본 유형은 한국어 대화에서 골라지지 않는다)
+    """
+    t = registry.trees.get(tid)
+    if t is None:
+        return False
+    if len(getattr(t, "history", []) or []) > 0:
+        return True
+    try:
+        import re as _re
+        for n in (getattr(t, "nodes", {}) or {}).values():
+            name = (getattr(n, "name", "") or
+                    (n.get("name") if isinstance(n, dict) else "")) or ""
+            if _re.search(r"[가-힣]", name):
+                return True
+    except Exception:
+        pass
+    return False
+
+
 def _topic_tree(registry, topic: str, embed_fn=None, classify_fn=None):
     """
     주제에 가장 가까운 트리.
@@ -59,11 +83,26 @@ def _topic_tree(registry, topic: str, embed_fn=None, classify_fn=None):
                                      classify_fn=classify_fn)
     except Exception:
         tid = None
+
+    # **쓰이지 않는 유형에는 먹이지 않는다.**
+    #
+    # 해시 임베딩은 뜻이 아니라 글자를 본다. 그래서 지시문이 영어인
+    # 기본 유형(syllogism 등)이 한국어 주제와 엉뚱하게 가까워 보였고,
+    # 근거 236건이 **한 번도 걸어본 적 없는 길**에 쌓였다.
+    # 그동안 실제로 169번 쓰인 emotion_analysis 는 근거가 11건뿐이었다.
+    if tid and tid in registry.trees and not _is_live(registry, tid):
+        tid = None
+
     if tid and tid in registry.trees:
         return tid, registry.trees[tid]
     if not registry.trees:
         return None, None
-    tid = min(registry.trees,
+
+    # 못 찾으면 **실제로 걸어본 길 중 가장 덜 배운 것**에 붙인다.
+    # 어디든 쌓여야 깊어지되, 안 쓰는 길에 쌓는 것은 버리는 것과 같다.
+    live = [k for k in registry.trees if _is_live(registry, k)]
+    pool = live or list(registry.trees)
+    tid = min(pool,
               key=lambda k: len(getattr(registry.trees[k], "memory", [])))
     return tid, registry.trees[tid]
 
