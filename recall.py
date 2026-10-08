@@ -151,7 +151,7 @@ class FactRecall:
                 out.append(f)
             if len(out) >= k:
                 break
-        return out
+        return mark_conflicts(out)
 
     @staticmethod
     def _age_days(f: dict, now: float) -> float:
@@ -198,3 +198,59 @@ class FactRecall:
                 "som": None if self.som is None
                 else f"{self.som.gh}x{self.som.gw}",
                 "nodes_used": len(self.assign)}
+
+
+# ── 어긋난 것은 숨기지 않는다 ──────────────────────────────
+def mark_conflicts(facts: list) -> list:
+    """
+    꺼낸 것들 중 **서로 어긋나는 짝**에 표시를 남긴다.
+
+    왜 하나를 고르지 않나
+      확신이 0.6 과 0.55 로 비슷할 때 높은 쪽만 넣으면, 그 차이가
+      의미 있는지 아무도 모르는 채 **조용히 한쪽이 버려진다.**
+      그리고 왜 그렇게 답했는지 기록에도 안 남는다.
+
+      모르는 것은 모른다고 하는 편이 낫다. 둘 다 넣되 어긋났다고
+      적어두면, 몰랑이가 "어느 쪽이더라?" 하고 물을 수 있다.
+      스스로 못 푸는 것을 사람에게 가져오는 것이 이 구조의 방식이다.
+    """
+    try:
+        import belief_decay as _bd
+    except Exception:
+        return facts
+    seen = set()
+    for i, a in enumerate(facts):
+        ta = a.get("text") or ""
+        for b in facts[i + 1:]:
+            tb = b.get("text") or ""
+            if (ta, tb) in seen:
+                continue
+            try:
+                if not _bd._opposed(ta, tb):
+                    continue
+            except Exception:
+                continue
+            seen.add((ta, tb))
+            a["conflict_with"] = tb[:60]
+            b["conflict_with"] = ta[:60]
+    return facts
+
+
+def conflict_note(facts: list) -> str:
+    """프롬프트에 붙일 한 줄 — 어긋난 것이 있으면 알린다."""
+    pairs, done = [], set()
+    for f in facts or []:
+        c = f.get("conflict_with")
+        if not c:
+            continue
+        key = tuple(sorted([f.get("text", "")[:60], c]))
+        if key in done:
+            continue
+        done.add(key)
+        pairs.append(key)
+    if not pairs:
+        return ""
+    body = "\n".join(f"  · \"{a}\" ↔ \"{b}\"" for a, b in pairs[:3])
+    return ("[어긋나는 기억]\n" + body +
+            "\n(둘 다 알고 있지만 어느 쪽이 맞는지 모른다. "
+            "이야기 중에 자연스럽게 물어봐도 된다. 아는 척 고르지 마라.)\n")
