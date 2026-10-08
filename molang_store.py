@@ -153,7 +153,7 @@ class SupabaseIdentity:
         try:
             self._facts = self.sb.table('molang_facts_active') \
                 .select('id,text,norm_key,kind,strength,trust,seen,source,'
-                        'expires_at,owner') \
+                        'expires_at,owner,updated_at,created_at') \
                 .eq('owner', self.owner) \
                 .order('strength', desc=True).limit(400).execute().data or []
         except Exception as e:      # 뷰가 아직 없으면 알려주고 빈 상태로 시작
@@ -220,7 +220,17 @@ class SupabaseIdentity:
                         self._recall_n != len(self._facts):
                     self._recall = recall.FactRecall(self._facts)
                     self._recall_n = len(self._facts)
-                pool = self._recall.recall(question, k=self.max_facts)
+                # 마르코프를 함께 넘긴다 — 질문의 낱말에서 **이어지는**
+                # 낱말이 든 사실까지 끌어오기 위해서다.
+                _mkd = None
+                try:
+                    _r = (self.sb.table("molang_markov").select("data")
+                          .eq("id", 1).limit(1).execute().data) or []
+                    _mkd = (_r[0].get("data") if _r else None)
+                except Exception:
+                    _mkd = None
+                pool = self._recall.recall(question, k=self.max_facts,
+                                           markov=_mkd)
         except Exception:
             pool = self._facts
 
