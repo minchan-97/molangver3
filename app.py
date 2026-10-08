@@ -301,6 +301,33 @@ with st.sidebar:
         _t_ask = _t_live = _t_mind = _t_check = st.container()
 
     with _t_ask:
+        # 🧹 안 걸어본 길에 쌓인 근거 옮기기
+        #
+        # 해시 임베딩이 글자를 보는 탓에, 지시문이 영어인 기본 유형에
+        # 근거가 쌓였다. 입구는 고쳤지만 이미 쌓인 것은 그대로다.
+        try:
+            import rehome_memory as _rh, curiosity_growth as _cg
+            _reg = st.session_state.get("registry") or registry
+            _dead = [k for k in _reg.trees if not _cg._is_live(_reg, k)]
+            _stuck = sum(len(getattr(_reg.trees[k], "memory", []) or [])
+                         for k in _dead)
+            if _stuck >= 20:
+                st.markdown("---")
+                st.caption(f"🧹 안 쓰는 사고 유형 {len(_dead)}개에 "
+                           f"근거 {_stuck}건이 묶여 있어요")
+                if safe(st.button, f"근거 {_stuck}건을 쓰는 쪽으로 옮기기",
+                        key=uk("rehome")):
+                    _r = _rh.rehome(_reg, log=lambda *a: None)
+                    try:
+                        import registry_store
+                        registry_store.save(sb, _reg)
+                    except Exception:
+                        pass
+                    st.success(f"근거 {_r.get('moved', 0)}건을 옮겼어요")
+                    st.rerun()
+        except Exception:
+            pass
+
         # 💬 하고 싶은 말 — **한 번에 하나씩.**
         #
         # 이 아이가 먼저 꺼낸 말은 전부 여기 모인다.
