@@ -25,8 +25,11 @@ def rehome(registry, log=print, dry=False) -> dict:
     if not live:
         return {"moved": 0, "why": "산 유형이 없음"}
 
-    # 받은 수를 세어가며 고른다 — 안 그러면 한 곳에 다 쏠린다
+    # **자주 걷는 길부터 채운다.**
+    # 고르게만 나누면 169번 걸은 길이 근거 11건으로 남는다.
     got = {k: len(getattr(registry.trees[k], "memory", []) or []) for k in live}
+    walked = {k: len(getattr(registry.trees[k], "history", []) or [])
+              for k in live}
 
     moved, from_, to_ = 0, {}, {}
     for tid in dead:
@@ -36,7 +39,9 @@ def rehome(registry, log=print, dry=False) -> dict:
             continue
         for m in mem:
             # 가장 덜 배운 산 유형으로 — 한 곳에 몰리지 않게
-            dst = min(live, key=lambda k: got.get(k, 0))
+            # 걸은 횟수 대비 근거가 가장 모자란 곳
+            dst = min(live, key=lambda k: -((walked.get(k, 0) + 1)
+                                            / (got.get(k, 0) + 1)))
             got[dst] = got.get(dst, 0) + 1
             if dry:
                 moved += 1
