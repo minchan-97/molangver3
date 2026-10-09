@@ -35,5 +35,9 @@ jobs:
           APP_URL: ${{ secrets.APP_URL }}
           # 알림 버튼이 답을 보낼 창구 (answer_api.py). 없으면 버튼만 안 뜬다.
           ANSWER_URL: ${{ secrets.ANSWER_URL }}
-          SEARCH_EVERY: "2"      # 몇 회차에 한 번 검색할지 (나머지는 생각만)
+          SEARCH_EVERY: "2"      # 몇 회차에 한 번 검색할지
+          # 한 번 검색할 때 몇 개를 볼지. 검색 횟수가 아니라
+          # **결과 수**라 Brave 한도에는 영향이 없다.
+          # 5개만 보면 이미 본 주소뿐이라 통째로 버려지는 일이 잦았다.
+          CURIOSITY_RESULTS: "10"
           MUSING_ROUNDS: "40"    # 한 번 깨어날 때 생각하는 횟수 (비용 0)
