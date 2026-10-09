@@ -254,9 +254,18 @@ def choose_topic(state, rng=None, subs=None):
     if not ranked:
         return rng.choice(SEEDS)
 
-    # 상위에서 **점수에 비례해** 뽑는다.
-    # 예전에는 상위 5개 중 무작위였다. 그러면 목적 가중치를 실어도
-    # 5개 안에만 들면 똑같은 확률이라 아무 차이가 없다.
+    # 가끔은 **아래쪽**도 본다.
+    #
+    # 상위 8개만 돌면 검색 주제가 돌고 돈다. 같은 주제를 또 찾으면
+    # Brave 는 같은 상위 결과를 주고, 이미 본 주소라 통째로 버려진다
+    # (실제로 "지도 제작" 5건이 전부 0건으로 들어왔다).
+    # 그래서 네 번에 한 번은 **덜 파본 아래쪽**에서 고른다.
+    if len(ranked) > 12 and rng.random() < 0.25:
+        tail = ranked[8:40]
+        tail = [t for t in tail if state.visited.get(t, 0) < 2] or tail
+        if tail:
+            return rng.choice(tail)
+
     top = ranked[:max(1, min(8, len(ranked)))]
     weights = [max(1e-6, scores[t]) for t in top]
     total = sum(weights)
