@@ -128,9 +128,7 @@ def safe(widget, *args, key: str = None, **kwargs):
 if not st.session_state.get("_nudge_checked"):
     st.session_state["_nudge_checked"] = True
     try:
-        # 답할 것이 있는 말(묻는 말)은 대화창에 띄우지 않는다.
-        # 띄우면서 바로 '전했다'로 표시해 버리면, 사이드바에서 사라져
-        # **답할 기회가 없어진다.** 그 셋은 사이드바에서 버튼으로 답한다.
+        # 답할 것이 있는 말은 사이드바에 남겨 둔다.
         ASKS = ("peek", "waiting", "confirm", "unsure", "conflict")
         _waiting = [p for p in outbox.pending(sb, 3)
                     if p.get("rule") not in ASKS][:1]
@@ -155,7 +153,7 @@ if not st.session_state.get("_nudge_checked"):
 
 # LLM 함수 (Arcogit이 쓰는 것)
 choose_fn = make_choose_fn(client)
-answer_fn = make_answer_fn(client, {})
+answer_fn_factory = lambda tree: make_answer_fn(client, tree.nodes)
 designer = make_tree_designer(client)
 classify_fn = make_classifier(client)
 consolidate_fn = make_consolidator(client)
@@ -302,9 +300,6 @@ with st.sidebar:
 
     with _t_ask:
         # 🧹 안 걸어본 길에 쌓인 근거 옮기기
-        #
-        # 해시 임베딩이 글자를 보는 탓에, 지시문이 영어인 기본 유형에
-        # 근거가 쌓였다. 입구는 고쳤지만 이미 쌓인 것은 그대로다.
         try:
             import rehome_memory as _rh, curiosity_growth as _cg
             _reg = u.registry
@@ -370,8 +365,6 @@ with st.sidebar:
                     st.rerun()
 
                 if _rule == "conflict":
-                    # 둘 다 알고 있는데 어긋난다 — 한쪽을 고르면
-                    # 그쪽이 굳고 다른 쪽은 내려놓는다.
                     _c1, _c2, _c3 = st.columns(3)
                     _fa = _pay.get("fact_id")
                     _fb = _pay.get("other_id")
@@ -523,14 +516,7 @@ with st.sidebar:
         except Exception:
             pass
 
-        # 🗺️ 세계 — 동네 한 장.
-        #
-        # 집 안의 방은 여기 없다. '부엌' 이 '미피네' 와 같은 칸에 놓이면
-        # 세계가 뭉개진다. 집에 있는 사람은 **몰랑이네**에 모여 보이고,
-        # 방 안 어디인지는 아래 '둘의 집' 에서 본다.
-        #
-        # **안 가본 곳은 검게.** 다녀오면 또렷해지고,
-        # 누가 얘기해주면 흐리게 드러난다.
+        # 🗺️ 세계 — 안 가본 곳은 검게, 들은 곳은 흐리게 보인다.
         try:
             import worldmap as _wmv
             _w = _wmv.load(sb)
@@ -548,7 +534,6 @@ with st.sidebar:
                     for _i in range(_n):
                         _c = _row[_i] if _i < len(_row) else None
                         if _c is None:
-                            # 아직 아무것도 없는 자리 — 세계의 가장자리
                             _cells.append(
                                 '<div style="background:#e4e4e4;'
                                 'border:1px dashed #cfcfcf;border-radius:6px;'
@@ -584,7 +569,7 @@ with st.sidebar:
         except Exception:
             pass
 
-        # 🧲 자석 낱말 — 무엇 다음에 무엇이 오나 (기존 지도와 나란히)
+        # 🧲 자석 낱말 — 기존 지도와 나란히
         try:
             _row = (sb.table("molang_markov").select("data")
                     .eq("id", 1).limit(1).execute().data) or []
@@ -594,8 +579,7 @@ with st.sidebar:
                 st.markdown("---")
                 st.markdown("### 🧲 자석 낱말")
                 st.caption("　여러 낱말이 자기 다음에 부르는 말일수록 무겁다")
-                for _w, _v in sorted(_mass.items(),
-                                     key=lambda x: -x[1])[:8]:
+                for _w, _v in sorted(_mass.items(), key=lambda x: -x[1])[:8]:
                     _bar = "▰" * max(1, round(_v * 6)) + "▱" * (6 - max(1, round(_v * 6)))
                     st.caption(f"　{_w} {_bar} {_v:.2f}")
                 _tr = _mkd.get("trans") or {}
@@ -870,25 +854,9 @@ with st.sidebar:
                       .in_("rule", ["purpose_sub", "purpose_core"])
                       .is_("error", "null")
                       .order("id", desc=True).limit(6).execute().data) or []
-            # 이미 정한 것은 다시 묻지 않는다.
-            #
-            # 하위 제안은 payload.purpose 에, **핵심 제안은 payload.new 에**
-            # 문장이 들어 있다. 전자만 보고 거르는 바람에 핵심 제안이
-            # 승인한 뒤에도 계속 떴다 (그래서 네 번 중복 저장됐다).
             _done = {p.get("purpose") for p in purpose_growth.load_subs(sb, False)}
-            try:
-                _done |= {p.get("purpose") for p in
-                          (sb.table("molang_purposes").select("purpose")
-                           .eq("status", "core").execute().data or [])}
-            except Exception:
-                pass
-
-            def _said(p):
-                pl = p.get("payload") or {}
-                return pl.get("new") if p.get("rule") == "purpose_core" \
-                    else pl.get("purpose")
-
-            _props = [p for p in _props if _said(p) not in _done][:3]
+            _props = [p for p in _props
+                      if (p.get("payload") or {}).get("purpose") not in _done][:3]
         except Exception:
             _props = []
         if _props:
@@ -1374,7 +1342,8 @@ if msg or photo:
                               f"주소: {_off.get('url','')}")
             q_with_time = (f"[최근 대화]\n{_hist}\n\n"
                            f"사용자가 방금 한 말: \"{q}\"{_offer_txt}\n{bg}")
-            result = u.think(q_with_time, choose_fn=choose_fn, answer_fn=answer_fn,
+            result = u.think(q_with_time, choose_fn=choose_fn,
+                             answer_fn_factory=answer_fn_factory,
                              classify_fn=classify_fn, tree_factory=designer)
             answer = result["answer"] or "히힛 🐰"
 
