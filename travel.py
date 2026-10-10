@@ -173,13 +173,13 @@ def go(sb, tv: dict, state, identity=None, piu_identity=None,
     where, why = ready(tv, (mood_entry or {}).get("name", ""))
     if not where:
         return {"went": None, "why": why}
-    if where != "캐럿 아일랜드":
-        # 아직 섬 지도가 있는 곳은 캐럿 아일랜드뿐이다
-        where = "캐럿 아일랜드"
+    # 이제 세 곳 모두 자기 지도를 가진다.
+    # (예전에는 어디로 가든 캐럿 아일랜드가 되어, 눈의 마을에
+    #  그리움이 2.0 까지 차도 가면 당근농장이 나왔다)
 
     try:
         import island
-        trip = island.depart(tv, rng, log=log)
+        trip = island.depart(tv, rng, log=log, where=where)
     except Exception as e:
         return {"went": None, "why": f"출발 실패: {str(e)[:60]}"}
 
