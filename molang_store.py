@@ -161,7 +161,7 @@ class SupabaseIdentity:
                 .select('id,text,norm_key,kind,strength,trust,seen,source,'
                         'expires_at,owner,updated_at,created_at') \
                 .eq('owner', self.owner) \
-                .order('updated_at', desc=True).limit(400).execute().data or []
+                .order('updated_at', desc=True).limit(600).execute().data or []
 
             # 다만 **사람이 승인한 것**은 오래됐다고 잘리면 안 된다.
             # 그건 이 아이가 기댈 수 있는 몇 안 되는 바닥이다.
