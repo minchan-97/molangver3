@@ -41,7 +41,8 @@ class UnifiedIdentity:
               answer_fn: Optional[Callable] = None,
               classify_fn: Optional[Callable] = None,
               embed_fn: Optional[Callable] = None,
-              tree_factory: Optional[Callable] = None) -> dict:
+              tree_factory: Optional[Callable] = None,
+              answer_fn_factory: Optional[Callable] = None) -> dict:
         """
         하나의 사고 사이클:
           1. 유형 판별 → 그 유형 트리 재사용/생성
@@ -72,9 +73,7 @@ class UnifiedIdentity:
             identity_prompt = self.identity.to_system_prompt(question=question)
         except TypeError:
             identity_prompt = self.identity.to_system_prompt()
-        # **무엇을 근거로 했는지 기록에 남긴다.**
-        # 예전에는 맥락에만 넣고 sources 는 빈 채로 저장되어,
-        # "왜 그렇게 답했나" 를 되짚을 때 근거가 하나도 안 보였다.
+        # 사용한 근거를 감사 기록에도 남긴다.
         used = []
         try:
             used = tree.recall(question, embed_fn=embed_fn, top_k=3)
@@ -90,7 +89,9 @@ class UnifiedIdentity:
         full_context = "\n\n".join(context_parts)
 
         # 3. 트리 위를 이동 (구조가 답 통제)
-        rec = tree.traverse(choose_fn=choose_fn, answer_fn=answer_fn,
+        active_answer_fn = (answer_fn_factory(tree) if answer_fn_factory is not None
+                            else answer_fn)
+        rec = tree.traverse(choose_fn=choose_fn, answer_fn=active_answer_fn,
                             context=full_context)
         rec.context = question   # 감사 로그엔 원 질문만
         if used and not rec.sources:
