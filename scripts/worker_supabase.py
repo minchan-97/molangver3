@@ -588,6 +588,12 @@ def main(mode):
             except Exception as _me:
                 out['markov'] = {'error': str(_me)[:80]}
 
+            try:    # 흐려진 채로 오래 잊힌 것은 잠든다 (지우지는 않는다)
+                import belief_decay as _bd2
+                out['sleep'] = _bd2.sleep_old(store.sb)
+            except Exception:
+                pass
+
             try:    # 오래 안 본 사이는 옅어진다 (바닥은 있다)
                 import bonds as _bn
                 _bb = _bn.load(store.sb)
