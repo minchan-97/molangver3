@@ -213,6 +213,50 @@ def touch(sb, facts: list, log=None) -> int:
     return n
 
 
+# ── 아주 오래 잠든 것은 재운다 ──────────────────────────────
+SLEEP_BELOW = 0.25        # 이보다 흐려졌고
+SLEEP_DAYS = 90           # 이만큼 안 쓰였으면
+SLEEP_MAX = 20            # 한 번에 이만큼까지만 (한꺼번에 비우지 않는다)
+
+
+def sleep_old(sb, log=print) -> dict:
+    """
+    **흐려진 채로 오래 잊힌 것은 잠든다.**
+
+    옅어지기(faded)에는 바닥이 있다. 완전히 사라지지 않게 하려고
+    그렇게 두었다. 그런데 바닥에 닿은 채 몇 달이 지난 것까지 계속
+    목록에 남으면, 읽어오는 자리만 차지하고 새 기억이 밀려난다.
+
+    지우지는 않는다. strength 를 0 으로 두면 molang_facts_active
+    뷰에서 빠질 뿐, 기록은 남는다. **무엇을 잊었는지** 나중에 볼 수 있다.
+
+    사람이 승인한 것(trust='human')은 건드리지 않는다.
+    그건 이 아이가 기댈 바닥이다.
+    """
+    try:
+        from datetime import datetime, timezone, timedelta
+        old = (datetime.now(timezone.utc)
+               - timedelta(days=SLEEP_DAYS)).isoformat()
+        rows = (sb.table("molang_facts").select("id,text,strength,trust")
+                .lt("strength", SLEEP_BELOW).lt("updated_at", old)
+                .neq("trust", "human").gt("strength", 0)
+                .limit(SLEEP_MAX).execute().data) or []
+    except Exception as e:
+        return {"slept": 0, "why": str(e)[:60]}
+
+    slept = []
+    for r in rows:
+        try:
+            sb.table("molang_facts").update(
+                {"strength": 0.0}).eq("id", r["id"]).execute()
+            slept.append((r.get("text") or "")[:40])
+        except Exception:
+            pass
+    if slept:
+        log(f"  🌙 오래 잊힌 기억 {len(slept)}건이 잠들었다")
+    return {"slept": len(slept), "examples": slept[:3]}
+
+
 def sweep(sb, limit=400, log=print) -> dict:
     """
     밤에 한 번. 묵은 사실의 확신을 옅게 한다.
