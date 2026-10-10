@@ -151,11 +151,30 @@ class SupabaseIdentity:
         # 만료·소멸 제외된 뷰에서만 읽는다
         self._recall = None            # 사실이 바뀌면 지도를 다시 만든다
         try:
+            # **최근순으로 읽는다.**
+            #
+            # 예전에는 강도순 상위 400건이었다. 그러면 사실이 400을 넘는
+            # 순간 **새로 들어온 것부터 잘린다** (갓 들어온 사실은 0.6).
+            # 실제로 사실 수가 400에서 멈춰 보였고, 어제 한 말이
+            # 아예 안 올라왔다.
             self._facts = self.sb.table('molang_facts_active') \
                 .select('id,text,norm_key,kind,strength,trust,seen,source,'
                         'expires_at,owner,updated_at,created_at') \
                 .eq('owner', self.owner) \
-                .order('strength', desc=True).limit(400).execute().data or []
+                .order('updated_at', desc=True).limit(400).execute().data or []
+
+            # 다만 **사람이 승인한 것**은 오래됐다고 잘리면 안 된다.
+            # 그건 이 아이가 기댈 수 있는 몇 안 되는 바닥이다.
+            try:
+                anchors = self.sb.table('molang_facts_active') \
+                    .select('id,text,norm_key,kind,strength,trust,seen,source,'
+                            'expires_at,owner,updated_at,created_at') \
+                    .eq('owner', self.owner).eq('trust', 'human') \
+                    .limit(120).execute().data or []
+                have = {f.get('id') for f in self._facts}
+                self._facts += [f for f in anchors if f.get('id') not in have]
+            except Exception:
+                pass
         except Exception as e:      # 뷰가 아직 없으면 알려주고 빈 상태로 시작
             self._facts = []
             self._load_error = f"molang_facts_active 읽기 실패: {e}"
