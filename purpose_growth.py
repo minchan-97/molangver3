@@ -264,7 +264,22 @@ def accept(sb, identity, outbox_row) -> dict:
             else:
                 base = f"[무엇을 향해 사는가] {new}\n" + base
             identity.persona = base
-            identity.save_identity()
+            # **충돌하면 다시 읽고 한 번 더.**
+            # 앱이 켜진 사이 워커가 정체성을 건드리면 version 이 어긋나
+            # 여기서 터졌다. 그러면 목적은 저장됐는데 페르소나만
+            # 안 바뀌고, 사용자에게는 "눌러도 안 된다" 로 보인다.
+            try:
+                identity.save_identity()
+            except Exception:
+                identity.reload()
+                base = identity.persona or ""
+                if "[무엇을 향해 사는가]" in base:
+                    base = re.sub(r"\[무엇을 향해 사는가\].*",
+                                  f"[무엇을 향해 사는가] {new}", base, count=1)
+                else:
+                    base = f"[무엇을 향해 사는가] {new}\n" + base
+                identity.persona = base
+                identity.save_identity()
             # 같은 제안이 다시 뜨지 않게 표시해 둔다
             try:
                 from datetime import datetime, timezone
