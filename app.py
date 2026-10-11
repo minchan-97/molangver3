@@ -365,9 +365,13 @@ with st.sidebar:
                     st.rerun()
 
                 if _rule == "conflict":
-                    _c1, _c2, _c3 = st.columns(3)
+                    # **둘 다 맞을 수도 있다.**
+                    # "바다를 좋아한다" 와 "바다를 무서워한다" 는 어긋나
+                    # 보이지만 둘 다 참일 수 있다. 사람의 마음이 그렇다.
+                    # 그걸 억지로 하나로 고르게 하면 오히려 기억이 틀어진다.
                     _fa = _pay.get("fact_id")
                     _fb = _pay.get("other_id")
+                    _c1, _c2 = st.columns(2)
                     with _c1:
                         if safe(st.button, "앞엣것", key=uk(f"cf_a{_a.get('id')}")):
                             _done(lambda: (_fa and _cr.confirm_belief(sb, _fa, True),
@@ -376,7 +380,13 @@ with st.sidebar:
                         if safe(st.button, "뒤엣것", key=uk(f"cf_b{_a.get('id')}")):
                             _done(lambda: (_fb and _cr.confirm_belief(sb, _fb, True),
                                            _fa and _cr.confirm_belief(sb, _fa, False)))
+                    _c3, _c4 = st.columns(2)
                     with _c3:
+                        if safe(st.button, "둘 다 맞아", key=uk(f"cf_o{_a.get('id')}")):
+                            _done(lambda: (_fa and _cr.confirm_belief(sb, _fa, True),
+                                           _fb and _cr.confirm_belief(sb, _fb, True),
+                                           _cr.mark_coexist(sb, _fa, _fb)))
+                    with _c4:
                         if safe(st.button, "둘 다 아냐", key=uk(f"cf_x{_a.get('id')}")):
                             _done(lambda: (_fa and _cr.confirm_belief(sb, _fa, False),
                                            _fb and _cr.confirm_belief(sb, _fb, False)))
