@@ -52,6 +52,20 @@ KINDS = {
              {"밝기": 0.9, "소리": 0.3, "바람": 0.8, "냄새": 0.3}),
     "물가": (["강", "시내", "연못", "물가", "돌다리", "물고기"],
              {"밝기": 0.6, "소리": 0.5, "바람": 0.4, "냄새": 0.5}),
+    # 여섯 가지뿐이면 금세 바닥난다. 바다와 숲이 생긴 뒤로는
+    # 무엇을 궁금해해도 **늘 '바다' 로 판정되어** 이미 있다고 거절됐다.
+    "언덕마루": (["언덕", "노을", "전망", "멀리", "앉아", "하늘", "구름"],
+                {"밝기": 0.8, "소리": 0.2, "바람": 0.9, "냄새": 0.3}),
+    "밤하늘터": (["별", "밤", "우주", "은하수", "어둠", "달", "천문학"],
+                {"밝기": 0.1, "소리": 0.1, "바람": 0.5, "냄새": 0.2}),
+    "꽃길":     (["꽃", "향기", "봄", "색", "나비", "피다", "정원"],
+                {"밝기": 0.8, "소리": 0.3, "바람": 0.4, "냄새": 0.9}),
+    "폐허":     (["오래된", "돌담", "흔적", "고대", "역사", "유적", "조용"],
+                {"밝기": 0.5, "소리": 0.1, "바람": 0.6, "냄새": 0.4}),
+    "안개골":   (["안개", "흐림", "습기", "희미", "새벽", "고요"],
+                {"밝기": 0.3, "소리": 0.1, "바람": 0.2, "냄새": 0.6}),
+    "메아리벽": (["소리", "노래", "울림", "메아리", "음악", "바위"],
+                {"밝기": 0.5, "소리": 1.0, "바람": 0.5, "냄새": 0.2}),
 }
 
 
@@ -90,13 +104,20 @@ def save(sb, land: dict):
 
 
 # ── 생김 ─────────────────────────────────────────────────────
-def _kind_of(words) -> tuple:
-    """관심 낱말 묶음이 어느 지형에 가까운가."""
+def _kind_of(words, exclude=None) -> tuple:
+    """
+    관심 낱말 묶음이 어느 지형에 가까운가.
+    **이미 있는 지형은 빼고** 본다 — 안 그러면 늘 같은 답이 나온다.
+    """
+    exclude = exclude or set()
     v = _vec(" ".join(words))
+    joined = " ".join(words)
     best, score = None, -1.0
     for name, (keys, _) in KINDS.items():
+        if name in exclude:
+            continue
         s = float(v @ _vec(" ".join(keys)))
-        if any(k in " ".join(words) for k in keys):
+        if any(k in joined for k in keys):
             s += 0.35                      # 낱말이 직접 겹치면 확실히
         if s > score:
             best, score = name, s
@@ -118,10 +139,12 @@ def maybe_grow(land: dict, interests: dict, log=print) -> dict | None:
     if total < GROW_AFTER:
         return None
 
-    kind, score = _kind_of([t for t, _ in top])
-    if not kind or score < 0.15:
-        return None
-    if any(p["kind"] == kind for p in land["places"]):
+    # **이미 있는 지형은 빼고** 고른다.
+    # 예전에는 가장 가까운 하나만 보고, 그게 이미 있으면 그대로 끝났다.
+    # 관심 상위가 바뀌지 않는 한 영영 아무것도 안 생겼다.
+    have = {p["kind"] for p in land["places"]}
+    kind, score = _kind_of([t for t, _ in top], exclude=have)
+    if not kind or score < 0.12:
         return None
 
     # 집에서 얼마나 먼가 — 나중에 생길수록 멀다 (반경이 넓어진다)
