@@ -63,7 +63,8 @@ class FactRecall:
             self.som = None       # 실패하면 조용히 예전 방식으로 (기억은 지킨다)
 
     # ── 꺼내기 ────────────────────────────────────────────────
-    def recall(self, question: str, k: int = 40, markov: dict = None) -> list[dict]:
+    def recall(self, question: str, k: int = 40, markov: dict = None,
+               sb=None) -> list[dict]:
         """
         네 가지를 **한 점수로 묶어** 꺼낸다.
 
@@ -151,7 +152,7 @@ class FactRecall:
                 out.append(f)
             if len(out) >= k:
                 break
-        return mark_conflicts(out)
+        return mark_conflicts(out, sb=sb)
 
     @staticmethod
     def _age_days(f: dict, now: float) -> float:
@@ -201,7 +202,7 @@ class FactRecall:
 
 
 # ── 어긋난 것은 숨기지 않는다 ──────────────────────────────
-def mark_conflicts(facts: list) -> list:
+def mark_conflicts(facts: list, sb=None) -> list:
     """
     꺼낸 것들 중 **서로 어긋나는 짝**에 표시를 남긴다.
 
@@ -230,6 +231,14 @@ def mark_conflicts(facts: list) -> list:
                     continue
             except Exception:
                 continue
+            # 사람이 "둘 다 맞아" 라고 한 짝은 어긋남이 아니다
+            if sb is not None:
+                try:
+                    import caring as _cr
+                    if _cr.is_coexist(sb, a.get("id"), b.get("id")):
+                        continue
+                except Exception:
+                    pass
             seen.add((ta, tb))
             a["conflict_with"] = tb[:60]
             b["conflict_with"] = ta[:60]
