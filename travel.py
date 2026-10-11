@@ -247,3 +247,4 @@ def describe(tv: dict) -> str:
     return (f"[여행] {len(trips)}번 다녀옴 · 마지막은 {last['where']} "
             f"· 사진 {len(tv.get('photos') or [])}장 "
             f"· 기념품 {len(tv.get('souvenirs') or [])}개")
+
