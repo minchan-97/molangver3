@@ -208,3 +208,39 @@ def confirm_belief(sb, fid: int, yes: bool) -> bool:
         pass
     return ok
 
+
+
+def mark_coexist(sb, fid_a: int, fid_b: int) -> bool:
+    """
+    **둘 다 맞다**고 했다. 다시 어긋났다고 묻지 않는다.
+
+    "바다를 좋아한다" 와 "바다를 무서워한다" 는 겉보기에 반대지만
+    둘 다 참일 수 있다. 사람의 마음이 그렇다. 그걸 하나로 고르게
+    하면 오히려 기억이 틀어진다.
+
+    그래서 이 짝은 **어긋남 목록에서 빼둔다.** 같은 질문이 또
+    올라오지 않게.
+    """
+    if not fid_a or not fid_b:
+        return False
+    try:
+        pair = sorted([int(fid_a), int(fid_b)])
+        sb.table("molang_coexist").upsert(
+            {"a": pair[0], "b": pair[1]}, on_conflict="a,b").execute()
+        return True
+    except Exception:
+        return False
+
+
+def is_coexist(sb, fid_a, fid_b) -> bool:
+    """이미 '둘 다 맞다'고 정한 짝인가."""
+    if not fid_a or not fid_b:
+        return False
+    try:
+        pair = sorted([int(fid_a), int(fid_b)])
+        got = (sb.table("molang_coexist").select("a")
+               .eq("a", pair[0]).eq("b", pair[1])
+               .limit(1).execute().data) or []
+        return bool(got)
+    except Exception:
+        return False
