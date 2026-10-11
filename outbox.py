@@ -102,6 +102,13 @@ def collect_signals(sb, identity=None, registry=None, state=None) -> list[dict]:
                 for b in fs[i + 1:]:
                     if not _bdx._opposed(ta, b.get("text") or ""):
                         continue
+                    # 사람이 "둘 다 맞아" 라고 한 짝은 다시 묻지 않는다
+                    try:
+                        import caring as _cr0
+                        if _cr0.is_coexist(sb, a.get("id"), b.get("id")):
+                            continue
+                    except Exception:
+                        pass
                     out.append({
                         "rule": "conflict", "weight": 3,
                         "detail": f'"{ta[:40]}" 랑 "{(b.get("text") or "")[:40]}" '
