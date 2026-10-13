@@ -20,6 +20,12 @@ import molang_persist as persist
 
 st.set_page_config(page_title="몰랑이 💗", page_icon="🐰", layout="centered")
 
+# 스크립트가 처음부터 다시 돌 때마다 하나씩 올린다.
+# 이것이 바뀌면 uk() 가 쓰던 키 목록을 비운다 — 같은 버튼이
+# 늘 같은 키를 받아야 눌린 신호가 전해진다.
+st.session_state["_key_run_tick"] = st.session_state.get(
+    "_key_run_tick", 0) + 1
+
 # ── Supabase 연결 + 비밀번호 게이트 (어떤 데이터 접근보다 앞) ──
 from supabase import create_client
 import molang_auth
@@ -100,10 +106,28 @@ u = st.session_state.unified
 # 키를 미리 유일하게 만드는 것만으로는 부족했다(Streamlit 판에 따라
 # 이전 실행의 키가 남아 DuplicateElementKey 가 난다). 그래서 실제로 그려보고,
 # 충돌하면 다른 키로 다시 그린다.
+# **재실행마다 비운다.**
+#
+# 모듈 수준에 두면 한 번 쓴 키가 계속 남아, 같은 버튼이 다음 실행에서
+# "pok_123" → "pok_123_x" → "pok_123_x_x" 로 바뀐다. 그러면 Streamlit 이
+# 그걸 **새 버튼**으로 보고, 눌린 신호를 못 받는다.
+# (목적 승인 버튼을 눌러도 아무 일이 없던 이유다)
 _USED_KEYS = set()
+_KEY_RUN = 0
 
 
 def uk(name: str) -> str:
+    """
+    이 실행에서 겹치지 않는 키. **실행이 바뀌면 처음부터 다시 센다.**
+    그래야 같은 버튼이 늘 같은 키를 받는다.
+    """
+    global _KEY_RUN
+    # Streamlit 은 재실행마다 스크립트를 처음부터 돌린다.
+    # 그 시작을 알리는 표시를 session_state 에 두고, 바뀌면 비운다.
+    run = st.session_state.get("_key_run_tick")
+    if run != _KEY_RUN:
+        _USED_KEYS.clear()
+        _KEY_RUN = run
     k = name
     while k in _USED_KEYS:
         k += "_x"
