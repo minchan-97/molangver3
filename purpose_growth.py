@@ -169,6 +169,16 @@ CORE_SYSTEM = """너는 몰랑이(흰 토끼)다. 그동안 네가 품어온 목
 JSON 하나만: {"purpose":"...", "changed":"무엇이 달라졌는지 한 줄"}"""
 
 
+def _too_similar(a: str, b: str, cut: float = 0.85) -> bool:
+    """두 문장이 사실상 같은가 — 낱말이 이만큼 겹치면 같은 말이다."""
+    import re as _re
+    wa = set(_re.findall(r"[가-힣A-Za-z]{2,}", a or ""))
+    wb = set(_re.findall(r"[가-힣A-Za-z]{2,}", b or ""))
+    if not wa or not wb:
+        return False
+    return len(wa & wb) / len(wa | wb) >= cut
+
+
 def propose_core(sb, api_key=None, core_purpose="", log=print):
     """승인된 하위 목적이 쌓이고 결이 달라졌을 때만 핵심 목적을 다시 제안."""
     subs = load_subs(sb)
@@ -212,6 +222,28 @@ def propose_core(sb, api_key=None, core_purpose="", log=print):
             log(f"  핵심 목적 다듬기 실패: {e}")
     if not payload.get("new"):
         return {"skip": "새 문장을 못 만듦"}
+
+    # **거의 같은 문장이면 제안하지 않는다.**
+    #
+    # 하위 목적이 그대로면 같은 재료로 같은 요약이 나온다. 실제로
+    # 닷새 내리 제안이 올라왔는데, 그중 둘은 지금 목적과 **글자까지
+    # 똑같았고** 나머지도 쉼표 하나 차이였다. 그걸 승인해도 아무것도
+    # 안 바뀌니, 사용자에게는 "눌러도 안 된다" 로 보인다.
+    if _too_similar(core_purpose, payload["new"]):
+        return {"skip": "지금 목적과 거의 같음"}
+
+    # 그리고 **한 번 바꾸면 한동안 묻지 않는다.**
+    # 방향을 정하는 일은 자주 할 것이 아니다.
+    try:
+        from datetime import datetime, timezone, timedelta
+        since = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+        got = (sb.table("molang_outbox").select("id")
+               .eq("rule", "purpose_core").gte("created_at", since)
+               .limit(1).execute().data) or []
+        if got:
+            return {"skip": "최근에 이미 물어봄 (7일)"}
+    except Exception:
+        pass
 
     try:
         sb.table("molang_outbox").insert({
