@@ -85,7 +85,19 @@ def seeds(question: str, gmap: dict = None) -> list:
                 out.append(cand)
             break
         else:
-            if not nodes and w not in out:
+            # 지도에 없는 꼴이면, **뜻이 가장 가까운 지도 낱말**로 바꾼다.
+            # ('지내' 가 지도에 없어도 '살다' 로 닿을 수 있게)
+            placed = False
+            if nodes:
+                try:
+                    import vectors as _vc
+                    near = _vc.near(w, k=1, pool=list(nodes))
+                    if near and near[0][0] not in out:
+                        out.append(near[0][0])
+                        placed = True
+                except Exception:
+                    pass
+            if not placed and not nodes and w not in out:
                 out.append(w)
     return out[:MAX_SEEDS]
 
@@ -109,6 +121,20 @@ def spread(gmap: dict, question: str, mass: dict = None,
     starts = seeds(question, gmap)
     for s in starts:
         out[s] = max(out.get(s, 0.0), 1.2)      # 질문에 직접 나온 말
+
+    # 0걸음 — **뜻이 가까운 낱말** (word2vec)
+    #
+    # 지도는 '함께 나온 적이 있나' 만 안다. 그래서 '살다' 와 '일광' 이
+    # 같은 글에 없었으면 영영 못 잇는다. 벡터는 **간선이 없어도**
+    # 가깝다는 것을 안다. 이것이 해시로는 못 하던 일이다.
+    try:
+        import vectors as _vc
+        nodes = list((gmap.get("nodes") or {}))
+        for s_ in starts:
+            for nb, sim in _vc.near(s_, k=6, pool=nodes):
+                out[nb] = max(out.get(nb, 0.0), HOP1 * float(sim))
+    except Exception:
+        pass
 
     # 1걸음 — 지도에서 바로 이어진 것
     first = []
