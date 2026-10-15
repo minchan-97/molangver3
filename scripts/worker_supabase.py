@@ -158,6 +158,15 @@ def main(mode):
                           'observations': len(state.observations)}
 
         cyc = None
+        # **지금 무엇으로 뜻을 재고 있나.**
+        # 한 줄 찍어 두지 않으면, 해시인 채로 도는 것이 조용히 지나간다.
+        try:
+            import vectors as _vc
+            out['vectors'] = _vc.source()
+            log(f"  🧭 벡터: {_vc.source()}")
+        except Exception:
+            pass
+
         _world_todo = []        # 이 회차에 드러난 곳들 (끝에 한 번 저장)
 
         if mode in ('hourly', 'all'):
@@ -587,12 +596,6 @@ def main(mode):
                     'top': sorted(_mass.items(), key=lambda x: -x[1])[:6]}
             except Exception as _me:
                 out['markov'] = {'error': str(_me)[:80]}
-
-            try:    # 흐려진 채로 오래 잊힌 것은 잠든다 (지우지는 않는다)
-                import belief_decay as _bd2
-                out['sleep'] = _bd2.sleep_old(store.sb)
-            except Exception:
-                pass
 
             try:    # 오래 안 본 사이는 옅어진다 (바닥은 있다)
                 import bonds as _bn
