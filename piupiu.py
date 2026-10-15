@@ -166,8 +166,8 @@ def converse(sb, mol_ident, piu_ident, seen: dict, api_key=None,
                 import answer_check as _ac
                 gmap = mass = None
                 try:
-                    import semantic_map as _sm, word_gravity as _wg
-                    gmap = _sm.load(sb)
+                    import mapsource as _sm, word_gravity as _wg
+                    gmap, _ = _sm.load(sb)
                     mass = _wg.masses(gmap)
                 except Exception:
                     pass
