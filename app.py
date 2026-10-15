@@ -20,12 +20,6 @@ import molang_persist as persist
 
 st.set_page_config(page_title="몰랑이 💗", page_icon="🐰", layout="centered")
 
-# 스크립트가 처음부터 다시 돌 때마다 하나씩 올린다.
-# 이것이 바뀌면 uk() 가 쓰던 키 목록을 비운다 — 같은 버튼이
-# 늘 같은 키를 받아야 눌린 신호가 전해진다.
-st.session_state["_key_run_tick"] = st.session_state.get(
-    "_key_run_tick", 0) + 1
-
 # ── Supabase 연결 + 비밀번호 게이트 (어떤 데이터 접근보다 앞) ──
 from supabase import create_client
 import molang_auth
@@ -106,28 +100,10 @@ u = st.session_state.unified
 # 키를 미리 유일하게 만드는 것만으로는 부족했다(Streamlit 판에 따라
 # 이전 실행의 키가 남아 DuplicateElementKey 가 난다). 그래서 실제로 그려보고,
 # 충돌하면 다른 키로 다시 그린다.
-# **재실행마다 비운다.**
-#
-# 모듈 수준에 두면 한 번 쓴 키가 계속 남아, 같은 버튼이 다음 실행에서
-# "pok_123" → "pok_123_x" → "pok_123_x_x" 로 바뀐다. 그러면 Streamlit 이
-# 그걸 **새 버튼**으로 보고, 눌린 신호를 못 받는다.
-# (목적 승인 버튼을 눌러도 아무 일이 없던 이유다)
 _USED_KEYS = set()
-_KEY_RUN = 0
 
 
 def uk(name: str) -> str:
-    """
-    이 실행에서 겹치지 않는 키. **실행이 바뀌면 처음부터 다시 센다.**
-    그래야 같은 버튼이 늘 같은 키를 받는다.
-    """
-    global _KEY_RUN
-    # Streamlit 은 재실행마다 스크립트를 처음부터 돌린다.
-    # 그 시작을 알리는 표시를 session_state 에 두고, 바뀌면 비운다.
-    run = st.session_state.get("_key_run_tick")
-    if run != _KEY_RUN:
-        _USED_KEYS.clear()
-        _KEY_RUN = run
     k = name
     while k in _USED_KEYS:
         k += "_x"
@@ -323,6 +299,35 @@ with st.sidebar:
         _t_ask = _t_live = _t_mind = _t_check = st.container()
 
     with _t_ask:
+        # 🧩 같은 말이 여러 번 적힌 것 — **보고 고르신다**
+        #
+        # "어디 살아?" 에 답을 못 한 건 기억이 없어서가 아니라
+        # 흩어져 있어서였다. 사는 곳 하나를 두고 여섯 건이 따로 있고,
+        # 각각 0.6~0.76 이라 어느 것도 세게 올라오지 않았다.
+        #
+        # 다만 자동으로 합치면 "빵에 관심" 과 "동물에 관심" 이 묶인다.
+        # 그래서 **사람이 보고 고르게** 한다.
+        try:
+            import merge_facts as _mf
+            _plan = _mf.plan(u.identity.learned_facts)
+            if _plan:
+                st.markdown("---")
+                st.markdown(f"### 🧩 같은 말로 보이는 것 {len(_plan)}묶음")
+                st.caption("　합치면 들은 횟수만큼 확신이 오릅니다")
+                for _i, _p in enumerate(_plan[:6]):
+                    st.caption("　" + _mf.describe(_p))
+                    for _d in _p["drop"][:3]:
+                        st.caption(f"　　↳ {(_d.get('text') or '')[:40]}")
+                    if safe(st.button, "합치기", key=uk(f"mg{_i}")):
+                        _mf.apply(sb, _p["keep"] and
+                                  [_p["keep"]] + _p["drop"],
+                                  log=lambda *a: None)
+                        u.identity.reload()
+                        st.success("하나로 모았어요")
+                        st.rerun()
+        except Exception:
+            pass
+
         # 🧹 안 걸어본 길에 쌓인 근거 옮기기
         try:
             import rehome_memory as _rh, curiosity_growth as _cg
@@ -389,13 +394,9 @@ with st.sidebar:
                     st.rerun()
 
                 if _rule == "conflict":
-                    # **둘 다 맞을 수도 있다.**
-                    # "바다를 좋아한다" 와 "바다를 무서워한다" 는 어긋나
-                    # 보이지만 둘 다 참일 수 있다. 사람의 마음이 그렇다.
-                    # 그걸 억지로 하나로 고르게 하면 오히려 기억이 틀어진다.
+                    _c1, _c2, _c3 = st.columns(3)
                     _fa = _pay.get("fact_id")
                     _fb = _pay.get("other_id")
-                    _c1, _c2 = st.columns(2)
                     with _c1:
                         if safe(st.button, "앞엣것", key=uk(f"cf_a{_a.get('id')}")):
                             _done(lambda: (_fa and _cr.confirm_belief(sb, _fa, True),
@@ -404,13 +405,7 @@ with st.sidebar:
                         if safe(st.button, "뒤엣것", key=uk(f"cf_b{_a.get('id')}")):
                             _done(lambda: (_fb and _cr.confirm_belief(sb, _fb, True),
                                            _fa and _cr.confirm_belief(sb, _fa, False)))
-                    _c3, _c4 = st.columns(2)
                     with _c3:
-                        if safe(st.button, "둘 다 맞아", key=uk(f"cf_o{_a.get('id')}")):
-                            _done(lambda: (_fa and _cr.confirm_belief(sb, _fa, True),
-                                           _fb and _cr.confirm_belief(sb, _fb, True),
-                                           _cr.mark_coexist(sb, _fa, _fb)))
-                    with _c4:
                         if safe(st.button, "둘 다 아냐", key=uk(f"cf_x{_a.get('id')}")):
                             _done(lambda: (_fa and _cr.confirm_belief(sb, _fa, False),
                                            _fb and _cr.confirm_belief(sb, _fb, False)))
@@ -451,11 +446,30 @@ with st.sidebar:
                         _done()
 
                 elif _rule == "waiting":
+                    # **여기서 바로 답한다.**
+                    # 예전에는 "대답할게" 를 누르면 그냥 사라졌다.
+                    # 물어놓고 들을 자리를 안 만든 셈이었다.
+                    _ans = safe(st.text_input, "여기에 답해주세요",
+                                key=uk(f"ak_t{_a.get('id')}"),
+                                placeholder="예: 갔다 왔어, 비 와서 못 갔어")
                     _c1, _c2 = st.columns(2)
                     with _c1:
-                        if safe(st.button, "대답할게",
+                        if safe(st.button, "보내기",
                                 key=uk(f"ak_a{_a.get('id')}")):
                             _wid = _pay.get("wait_id")
+                            _txt = (_ans or "").strip()
+                            if _txt:
+                                # 답은 **사실로 남는다.** 몰랑이가 물어서
+                                # 들은 것이니, 그 자체가 알게 된 것이다.
+                                try:
+                                    u.identity.absorb(
+                                        _a.get("body") or "", _txt,
+                                        learned=_txt, source="user")
+                                except Exception:
+                                    pass
+                                st.session_state.chat.append(
+                                    ("molang", _a.get("body") or "", "기쁨"))
+                                st.session_state.chat.append(("me", _txt, None))
                             _done(lambda: _wid and _cr.mark_asked(sb, _wid))
                     with _c2:
                         if safe(st.button, "나중에", key=uk(f"ak_w{_a.get('id')}")):
