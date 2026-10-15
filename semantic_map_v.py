@@ -26,11 +26,20 @@ semantic_map_v.py — **벡터로 그린 의미 지도.** 기존 지도와 나�
 """
 from __future__ import annotations
 import math
+import os
 import time
 from collections import Counter, defaultdict
 
 MIN_LINK = 2              # 함께 나온 횟수가 이보다 적으면 겪은 실로 안 친다
-SIM_LINK = 0.45           # 뜻이 이만큼 가까우면 겪지 않아도 잇는다
+# 뜻이 이만큼 가까우면 겪지 않아도 잇는다.
+#
+# 낮추면 마디가 늘지만 갈래가 느슨해진다. 0.45 에서는 마디가 220 까지
+# 늘었으나 갈래 확신이 0.33 으로 기존(0.40)보다 떨어졌다. 실이 많아져
+# 묶음이 뭉개진 것이다. 0.55 에서 확신 0.43 으로 기존을 넘어섰다.
+#
+# **마디를 늘리는 것이 목적이 아니다.** 자리를 잡되 또렷해야 한다.
+SIM_LINK = float(os.environ.get("MOLANG_SIM_LINK", "0.55"))
+SIM_WEIGHT = float(os.environ.get("MOLANG_SIM_WEIGHT", "0.4"))
 MAX_NODES = 1200
 SIM_NEIGHBORS = 6         # 낱말 하나가 뜻으로 이을 상대 수
 
@@ -107,7 +116,7 @@ def build(docs: list, keep: int = MAX_NODES, log=None) -> dict:
                     continue
                 # 겪지 않은 실은 **얇게** 둔다. 안 겪은 것을 겪은 것만큼
                 # 믿을 수는 없다.
-                edges[key] = round(0.5 * float(sim), 3)
+                edges[key] = round(SIM_WEIGHT * float(sim), 3)
                 kinds["뜻"] += 1
     except Exception:
         pass
@@ -126,10 +135,21 @@ def build(docs: list, keep: int = MAX_NODES, log=None) -> dict:
             "kinds": kinds, "built_at": time.time(), "docs": len(docs)}
 
 
-def clusters(gmap: dict, min_size: int = 3) -> list:
-    """갈래는 기존 방식 그대로 — 실이 달라졌으니 결과만 달라진다."""
+def clusters(gmap: dict, min_size: int = 3, log=None) -> list:
+    """
+    갈래는 기존 방식 그대로 — 실이 달라졌으니 결과만 달라진다.
+
+    **review 까지 거쳐야 한다.** 확신(confidence)은 clusters() 가 아니라
+    review() 에서 붙는다. 그걸 빼먹으면 갈래가 111개 생겨도
+    확신이 전부 0 이라, 꺼낼 때 갈래를 쓸 수가 없다.
+    """
     import semantic_map as SM
-    return SM.clusters(gmap, min_size=min_size)
+    cls = SM.clusters(gmap, min_size=min_size)
+    try:
+        r = SM.review(gmap, cls, log=(log or (lambda *a: None)))
+        return r.get("clusters") or cls
+    except Exception:
+        return cls
 
 
 def save(sb, gmap: dict, cls: list) -> bool:
@@ -209,7 +229,7 @@ def rebuild(sb, limit: int = 800, log=print) -> dict:
         return {"skip": f"자료가 {len(docs)}건뿐"}
 
     gmap = build(docs, log=log)
-    cls = clusters(gmap)
+    cls = clusters(gmap, log=lambda *a: None)
     save(sb, gmap, cls)
 
     # 기존 지도와 견준다 — 바꿀지 말지는 이 숫자를 보고 정한다
