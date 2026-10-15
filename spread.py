@@ -214,8 +214,8 @@ def why(text: str, spread_map: dict, k: int = 3) -> list:
 def load_map(sb):
     """지도와 갈래, 그리고 질량을 한 번에."""
     try:
-        import semantic_map as SM
-        gmap, cls = SM.load(sb)
+        import mapsource as MS
+        gmap, cls = MS.load(sb)
     except Exception:
         return None, None, None
     mass = None
