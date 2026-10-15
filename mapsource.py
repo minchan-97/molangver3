@@ -49,3 +49,4 @@ def load_old(sb) -> tuple:
     """기존 지도를 그대로. 견줄 때 쓴다."""
     import semantic_map as SM
     return SM.load(sb)
+
