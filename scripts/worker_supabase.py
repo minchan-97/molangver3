@@ -164,6 +164,9 @@ def main(mode):
             import vectors as _vc
             out['vectors'] = _vc.source()
             log(f"  🧭 벡터: {_vc.source()}")
+            import mapsource as _ms
+            out['map_use'] = _ms.which()
+            log(f"  🗺️ 쓰는 지도: {_ms.which()}")
         except Exception:
             pass
 
@@ -583,6 +586,12 @@ def main(mode):
                 out['map'] = _smap.rebuild(store.sb)
             except Exception as e:
                 out['map'] = {'error': str(e)[:120]}
+
+            try:    # 벡터로 그린 지도 — **나란히** 둔다 (덮어쓰지 않는다)
+                import semantic_map_v as _smv
+                out['map_v'] = _smv.rebuild(store.sb)
+            except Exception as e:
+                out['map_v'] = {'error': str(e)[:120]}
 
             try:    # 확신은 굳기만 하지 않는다 — 묵은 것은 옅어진다
                 import belief_decay as _bd
