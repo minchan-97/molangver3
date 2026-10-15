@@ -36,3 +36,4 @@ jobs:
           # 알림 버튼이 답을 보낼 창구 (answer_api.py). 없으면 버튼만 안 뜬다.
           ANSWER_URL: ${{ secrets.ANSWER_URL }}
           CURIOSITY_RESULTS: "10"
+          SEARCH_EVERY: "1"      # 밤에는 한 번뿐이니 거르지 않는다
