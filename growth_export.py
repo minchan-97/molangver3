@@ -87,7 +87,7 @@ def collect(sb, registry=None, state=None, identity=None) -> dict:
         except Exception as e:
             out["land"] = {"_error": str(e)[:80]}
         try:        # 기억 지도와 낱말 끌림
-            import semantic_map as _sm
+            import mapsource as _sm
             import word_gravity as _wgv
             _gm, _gcl = _sm.load(sb)
             if _gm.get("edges"):
