@@ -169,6 +169,42 @@ def main(mode):
 
         _world_todo = []        # 이 회차에 드러난 곳들 (끝에 한 번 저장)
 
+        # 여행 — **어느 모드에서도 돈다.**
+        #
+        # 전에는 이 블록이 `if mode in ('hourly','all')` 안에 있었는데,
+        # 떠나는 조건은 그 안에서 `elif mode in ('nightly','all')` 이었다.
+        # 시간당에는 블록은 돌지만 그 조건이 거짓이고, 밤에는 조건이
+        # 참이지만 블록이 안 돈다. **영영 떠날 수 없는 구조였다.**
+        # 그래서 그리움이 2.0 까지 차고도 한 번도 못 떠났다.
+        #
+        # (검색 블록 안에 있던 것도 함께 풀었다. 밤 워커에는
+        #  SEARCH_EVERY 가 없어 3회에 1번만 돌았기 때문이다.)
+        try:
+            import travel as _tv
+            from molang_store import SupabaseIdentity as _SI2
+            _t = _tv.load(store.sb)
+            _tv.stir_longing(_t, state.interests)
+            _piu_id = None
+            try:
+                import piupiu as _pp
+                _piu_id = _pp.identity(store.sb)
+            except Exception:
+                pass
+            _mood_now = ((state.moods or [{}])[-1]
+                         if getattr(state, 'moods', None) else {})
+            if _t.get('current'):
+                import island as _is
+                out['travel'] = _is.day(
+                    store.sb, _t, state, _SI2(store.sb), _piu_id,
+                    api_key=os.environ.get('OPENAI_API_KEY'))
+            elif mode in ('nightly', 'all'):
+                # 떠나는 것은 밤에만 (짐을 싸고 공항까지 가야 하니까)
+                out['travel'] = _tv.go(store.sb, _t, state,
+                                       _SI2(store.sb), _piu_id, _mood_now)
+            _tv.save(store.sb, _t)
+        except Exception as e:
+            out['travel'] = {'error': str(e)[:120]}
+
         if mode in ('hourly', 'all'):
             # 조용한 생각은 LLM 을 안 부른다 → 자주 돌려도 비용이 없다.
             # 사람도 늘 생각하지만 그걸 매번 문장으로 만들지는 않는다.
@@ -218,39 +254,6 @@ def main(mode):
             out['musing'] = musing.think_many(
                 state, rounds=int(os.environ.get('MUSING_ROUNDS', 30)),
                 log=print)
-            # 여행 — **검색과 상관없이 움직인다.**
-            #
-            # 전에는 이 블록이 `if state.cycle % every == 0:` 안에 있었다.
-            # 그런데 밤 워커에는 SEARCH_EVERY 가 없어 기본값 3 이 쓰였고,
-            # 회차가 3의 배수가 아닌 밤에는 **통째로 건너뛰었다.**
-            # 떠나는 것은 밤에만 되는데 그 밤을 자주 놓쳤으니,
-            # 그리움이 2.0 까지 차고도 몇 주를 못 떠났다.
-            try:
-                import travel as _tv
-                from molang_store import SupabaseIdentity as _SI2
-                _t = _tv.load(store.sb)
-                _tv.stir_longing(_t, state.interests)
-                _piu_id = None
-                try:
-                    import piupiu as _pp
-                    _piu_id = _pp.identity(store.sb)
-                except Exception:
-                    pass
-                _mood_now = ((state.moods or [{}])[-1]
-                             if getattr(state, 'moods', None) else {})
-                if _t.get('current'):
-                    import island as _is
-                    out['travel'] = _is.day(
-                        store.sb, _t, state, _SI2(store.sb), _piu_id,
-                        api_key=os.environ.get('OPENAI_API_KEY'))
-                elif mode in ('nightly', 'all'):
-                    # 떠나는 것은 밤에만 (짐을 싸고 공항까지 가야 하니까)
-                    out['travel'] = _tv.go(store.sb, _t, state,
-                                           _SI2(store.sb), _piu_id, _mood_now)
-                _tv.save(store.sb, _t)
-            except Exception as e:
-                out['travel'] = {'error': str(e)[:120]}
-
             # 검색은 매번이 아니라 가끔 (기본 3회에 1번)
             every = max(1, int(os.environ.get('SEARCH_EVERY', 3)))
             if state.cycle % every == 0:
