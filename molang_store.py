@@ -230,7 +230,7 @@ class SupabaseIdentity:
                 except Exception:
                     _mkd = None
                 pool = self._recall.recall(question, k=self.max_facts,
-                                           markov=_mkd, sb=self.sb)
+                                           markov=_mkd)
         except Exception:
             pool = self._facts
 
