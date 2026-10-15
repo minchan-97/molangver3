@@ -218,38 +218,44 @@ def main(mode):
             out['musing'] = musing.think_many(
                 state, rounds=int(os.environ.get('MUSING_ROUNDS', 30)),
                 log=print)
+            # 여행 — **검색과 상관없이 움직인다.**
+            #
+            # 전에는 이 블록이 `if state.cycle % every == 0:` 안에 있었다.
+            # 그런데 밤 워커에는 SEARCH_EVERY 가 없어 기본값 3 이 쓰였고,
+            # 회차가 3의 배수가 아닌 밤에는 **통째로 건너뛰었다.**
+            # 떠나는 것은 밤에만 되는데 그 밤을 자주 놓쳤으니,
+            # 그리움이 2.0 까지 차고도 몇 주를 못 떠났다.
+            try:
+                import travel as _tv
+                from molang_store import SupabaseIdentity as _SI2
+                _t = _tv.load(store.sb)
+                _tv.stir_longing(_t, state.interests)
+                _piu_id = None
+                try:
+                    import piupiu as _pp
+                    _piu_id = _pp.identity(store.sb)
+                except Exception:
+                    pass
+                _mood_now = ((state.moods or [{}])[-1]
+                             if getattr(state, 'moods', None) else {})
+                if _t.get('current'):
+                    import island as _is
+                    out['travel'] = _is.day(
+                        store.sb, _t, state, _SI2(store.sb), _piu_id,
+                        api_key=os.environ.get('OPENAI_API_KEY'))
+                elif mode in ('nightly', 'all'):
+                    # 떠나는 것은 밤에만 (짐을 싸고 공항까지 가야 하니까)
+                    out['travel'] = _tv.go(store.sb, _t, state,
+                                           _SI2(store.sb), _piu_id, _mood_now)
+                _tv.save(store.sb, _t)
+            except Exception as e:
+                out['travel'] = {'error': str(e)[:120]}
+
             # 검색은 매번이 아니라 가끔 (기본 3회에 1번)
             every = max(1, int(os.environ.get('SEARCH_EVERY', 3)))
             if state.cycle % every == 0:
                 cyc = curiosity_cycle(state, store, deep=False)
                 out['curiosity'] = cyc
-                # 여행 — **시간당에도 움직인다.** 밤에만 옮기면 하루 한 곳이라
-                # 여행이 아니라 잠자고 일어나면 순간이동하는 꼴이 된다.
-                try:
-                    import travel as _tv
-                    from molang_store import SupabaseIdentity as _SI2
-                    _t = _tv.load(store.sb)
-                    _tv.stir_longing(_t, state.interests)
-                    _piu_id = None
-                    try:
-                        import piupiu as _pp
-                        _piu_id = _pp.identity(store.sb)
-                    except Exception:
-                        pass
-                    _mood_now = ((state.moods or [{}])[-1]
-                                 if getattr(state, 'moods', None) else {})
-                    if _t.get('current'):
-                        import island as _is
-                        out['travel'] = _is.day(
-                            store.sb, _t, state, _SI2(store.sb), _piu_id,
-                            api_key=os.environ.get('OPENAI_API_KEY'))
-                    elif mode in ('nightly', 'all'):
-                        # 떠나는 것은 밤에만 (짐을 싸고 공항까지 가야 하니까)
-                        out['travel'] = _tv.go(store.sb, _t, state,
-                                               _SI2(store.sb), _piu_id, _mood_now)
-                    _tv.save(store.sb, _t)
-                except Exception as e:
-                    out['travel'] = {'error': str(e)[:120]}
                 # 마을 — 이웃들이 자기 자리에서 움직인다.
                 # 집(home)은 몰랑이네 안이고, 마을은 그 바깥이다.
                 try:
