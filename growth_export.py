@@ -90,6 +90,21 @@ def collect(sb, registry=None, state=None, identity=None) -> dict:
             import mapsource as _sm
             import word_gravity as _wgv
             _gm, _gcl = _sm.load(sb)
+            out["map_use"] = _sm.which()
+            try:        # 벡터 지도도 함께 담는다 (견줄 수 있게)
+                import semantic_map_v as _smv
+                _vg, _vc2 = _smv.load(sb)
+                if _vg:
+                    out["map_v"] = {
+                        "nodes": len(_vg.get("freq") or {}),
+                        "edges": len(_vg.get("edges") or {}),
+                        "clusters": len(_vc2),
+                        "kinds": _vg.get("kinds"),
+                        "unsettled": [w for w in (_vg.get("freq") or {})
+                                      if not any(w in (c.get("members") or [])
+                                                 for c in _vc2)][:20]}
+            except Exception:
+                pass
             if _gm.get("edges"):
                 _mass = _gm.get("mass") or {}
                 out["map"] = {
