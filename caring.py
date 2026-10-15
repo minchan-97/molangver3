@@ -46,11 +46,33 @@ def looks_like_plan(text: str) -> bool:
     return bool(PLAN.search(t))
 
 
+def _clean(text: str) -> str:
+    """
+    적어둘 말만 남긴다.
+
+    질문에는 "[최근 대화]\n사용자: …" 같은 머리글이 섞여 들어온다.
+    그대로 적으면 나중에 "며칠 전에 '[최근 대화] 사용자: 아 조금있다가
+    운동하러…' 그랬잖아" 가 되어 말이 안 된다.
+    """
+    t = (text or "").strip()
+    # 머리글 떼기
+    t = re.sub(r"^\s*\[[^\]]{1,20}\]\s*", "", t)
+    # 마지막 '사용자:' 뒤만 — 그게 방금 한 말이다
+    if "사용자:" in t:
+        t = t.rsplit("사용자:", 1)[-1]
+    for mark in ("몰랑이:", "[지금]", "[여기]"):
+        if mark in t:
+            t = t.split(mark)[0]
+    t = " ".join(t.split())
+    return t[:200]
+
+
 def remember_plan(sb, text: str, owner: str = "molang") -> bool:
     """
     "~할 거야" 를 따로 적어둔다. 사실과 섞지 않는다 —
     사실은 '그렇다' 이고 이것은 '그러려고 한다' 이기 때문이다.
     """
+    text = _clean(text)
     if not looks_like_plan(text):
         return False
     try:
@@ -207,40 +229,3 @@ def confirm_belief(sb, fid: int, yes: bool) -> bool:
     except Exception:
         pass
     return ok
-
-
-
-def mark_coexist(sb, fid_a: int, fid_b: int) -> bool:
-    """
-    **둘 다 맞다**고 했다. 다시 어긋났다고 묻지 않는다.
-
-    "바다를 좋아한다" 와 "바다를 무서워한다" 는 겉보기에 반대지만
-    둘 다 참일 수 있다. 사람의 마음이 그렇다. 그걸 하나로 고르게
-    하면 오히려 기억이 틀어진다.
-
-    그래서 이 짝은 **어긋남 목록에서 빼둔다.** 같은 질문이 또
-    올라오지 않게.
-    """
-    if not fid_a or not fid_b:
-        return False
-    try:
-        pair = sorted([int(fid_a), int(fid_b)])
-        sb.table("molang_coexist").upsert(
-            {"a": pair[0], "b": pair[1]}, on_conflict="a,b").execute()
-        return True
-    except Exception:
-        return False
-
-
-def is_coexist(sb, fid_a, fid_b) -> bool:
-    """이미 '둘 다 맞다'고 정한 짝인가."""
-    if not fid_a or not fid_b:
-        return False
-    try:
-        pair = sorted([int(fid_a), int(fid_b)])
-        got = (sb.table("molang_coexist").select("a")
-               .eq("a", pair[0]).eq("b", pair[1])
-               .limit(1).execute().data) or []
-        return bool(got)
-    except Exception:
-        return False
