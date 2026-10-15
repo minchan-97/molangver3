@@ -640,6 +640,29 @@ with st.sidebar:
         except Exception:
             pass
 
+        # 🗺️ 두 지도 견주기 — **바꾸기 전에 눈으로 본다**
+        try:
+            import semantic_map_v as _smv, semantic_map as _smo
+            _ng, _nc = _smv.load(sb)
+            if _ng:
+                _og, _oc = _smo.load(sb)
+                _r = _smv.compare(_og, _oc, _ng, _nc)
+                st.markdown("---")
+                st.markdown("### 🗺️ 지도 둘 (지금 / 벡터)")
+                for _k in ("마디", "실", "갈래", "자리못잡음"):
+                    _a, _b = _r[_k]
+                    _m = "↑" if _b > _a else ("↓" if _b < _a else "=")
+                    st.caption(f"　{_k}: {_a} → {_b} {_m}")
+                if _r.get("새로잡힌것"):
+                    st.caption("　새로 자리 잡음: "
+                               + ", ".join(_r["새로잡힌것"][:6]))
+                _kd = (_ng.get("kinds") or {})
+                if _kd:
+                    st.caption(f"　실의 결: 겪음 {_kd.get('겪음',0)} · "
+                               f"겹침 {_kd.get('둘다',0)} · 뜻 {_kd.get('뜻',0)}")
+        except Exception:
+            pass
+
         # 💞 사이 — 누구와 얼마나 가까운가
         try:
             import bonds as _bn
@@ -813,7 +836,7 @@ with st.sidebar:
     with _t_mind:
         # 🕸️ 기억 지도 — 무엇이 무엇에 끌리는지, 무엇이 아직 엉켜 있는지
         try:
-            import semantic_map as _sm
+            import mapsource as _sm
             import word_gravity as _wgv
             _gm, _gcl = _sm.load(sb)
             if _gm.get("edges"):
