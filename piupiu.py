@@ -135,24 +135,69 @@ def converse(sb, mol_ident, piu_ident, seen: dict, api_key=None,
             import json
             from openai import OpenAI
             c = OpenAI(api_key=api_key)
-            r = c.chat.completions.create(
-                model=os.environ.get("OPENAI_PEER_MODEL", "gpt-4o-mini"),
-                temperature=0.9, response_format={"type": "json_object"},
-                messages=[{"role": "system", "content": TALK_SYSTEM},
-                          {"role": "user", "content":
-                           f"오늘 본 것 [{seen.get('topic')}] "
-                           f"{(seen.get('title') or '')[:80]}\n"
-                           f"{(seen.get('text') or '')[:300]}\n"
-                           + (("[몰랑이가 이미 아는 것]\n- "
-                               + "\n- ".join(mol_knows) + "\n")
-                              if mol_knows else "")
-                           + (("[피우피우가 이미 아는 것]\n- "
-                               + "\n- ".join(piu_knows) + "\n")
-                              if piu_knows else "")
-                           + (f"둘은 지금 {place}에 함께 있다. 말이 길게 오간다."
-                              if same_room else
-                              "둘은 다른 방에 있다. 짧게 주고받는다.")}])
-            talk = json.loads(r.choices[0].message.content)
+
+            base = (f"오늘 본 것 [{seen.get('topic')}] "
+                    f"{(seen.get('title') or '')[:80]}\n"
+                    f"{(seen.get('text') or '')[:300]}\n"
+                    + (("[몰랑이가 이미 아는 것]\n- "
+                        + "\n- ".join(mol_knows) + "\n")
+                       if mol_knows else "")
+                    + (("[피우피우가 이미 아는 것]\n- "
+                        + "\n- ".join(piu_knows) + "\n")
+                       if piu_knows else "")
+                    + (f"둘은 지금 {place}에 함께 있다. 말이 길게 오간다."
+                       if same_room else
+                       "둘은 다른 방에 있다. 짧게 주고받는다."))
+
+            def _call(hint=""):
+                r = c.chat.completions.create(
+                    model=os.environ.get("OPENAI_PEER_MODEL", "gpt-4o-mini"),
+                    temperature=0.9, response_format={"type": "json_object"},
+                    messages=[{"role": "system", "content": TALK_SYSTEM},
+                              {"role": "user",
+                               "content": base + (("\n" + hint) if hint else "")}])
+                return r.choices[0].message.content
+
+            # **나온 말을 재고, 못 미더우면 다시 부른다.**
+            # "오늘 몰랑이의 생일이었대!" 처럼, 할 말이 마땅치 않을 때
+            # 그럴듯한 것을 지어내는 일이 있었다. 프롬프트의 금지만으로는
+            # 안 막힌다 — 나온 뒤에 재는 자리가 있어야 한다.
+            try:
+                import answer_check as _ac
+                gmap = mass = None
+                try:
+                    import semantic_map as _sm, word_gravity as _wg
+                    gmap = _sm.load(sb)
+                    mass = _wg.masses(gmap)
+                except Exception:
+                    pass
+                # JSON 통째로 재면 키 이름과 따옴표가 섞여 낮게 나온다.
+                # **말한 내용만** 꺼내서 잰다.
+                def _spoken(raw):
+                    try:
+                        d = json.loads(raw or "{}")
+                        return " ".join(str(d.get(k) or "")
+                                        for k in ("molang", "piupiu"))
+                    except Exception:
+                        return raw or ""
+
+                _raw = {}
+
+                def _call_text(hint=""):
+                    out = _call(hint)
+                    _raw["last"] = out
+                    return _spoken(out)
+
+                _r = _ac.ask_until_sure(
+                    _call_text, sources=(mol_knows or []) + (piu_knows or [])
+                    + [seen.get("text") or ""],
+                    gmap=gmap, mass=mass, log=log)
+                _r["text"] = _raw.get("last") or "{}"
+                talk = json.loads(_r.get("text") or "{}")
+                if _r.get("low"):
+                    talk["_low_conf"] = _r.get("conf")
+            except Exception:
+                talk = json.loads(_call())
         except Exception as e:
             log(f"  피우피우 대화 실패: {e}")
     if not talk:
@@ -176,6 +221,14 @@ def converse(sb, mol_ident, piu_ident, seen: dict, api_key=None,
     # LLM 이 빈칸을 채우는 대신 양식의 설명을 복사해서
     # "피우피우는 몰랑이가 피우피우에 대해 알게 된 것 또는 빈 문자열" 이
     # 사실로 저장된 일이 있었다.
+    # **확신이 낮았던 대화는 사실로 삼지 않는다.**
+    # 두 번 다시 물어도 근거에 닿지 못한 말이다. 대화로는 남기되
+    # (그 순간 그런 말이 오간 것은 사실이므로) 지식으로는 쌓지 않는다.
+    if talk.get("_low_conf") is not None:
+        log(f"  확신이 낮아 사실로는 남기지 않음 ({talk['_low_conf']})")
+        return {"talk": talk, "topic": seen.get("topic"),
+                "low_conf": talk["_low_conf"]}
+
     _TEMPLATE = ("알게 된 것", "빈 문자열", "낱말 하나", "또는 빈",
                  "molang_learns", "piupiu_learns", "topic_for_piupiu")
 
