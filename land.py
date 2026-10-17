@@ -52,20 +52,6 @@ KINDS = {
              {"밝기": 0.9, "소리": 0.3, "바람": 0.8, "냄새": 0.3}),
     "물가": (["강", "시내", "연못", "물가", "돌다리", "물고기"],
              {"밝기": 0.6, "소리": 0.5, "바람": 0.4, "냄새": 0.5}),
-    # 여섯 가지뿐이면 금세 바닥난다. 바다와 숲이 생긴 뒤로는
-    # 무엇을 궁금해해도 **늘 '바다' 로 판정되어** 이미 있다고 거절됐다.
-    "언덕마루": (["언덕", "노을", "전망", "멀리", "앉아", "하늘", "구름"],
-                {"밝기": 0.8, "소리": 0.2, "바람": 0.9, "냄새": 0.3}),
-    "밤하늘터": (["별", "밤", "우주", "은하수", "어둠", "달", "천문학"],
-                {"밝기": 0.1, "소리": 0.1, "바람": 0.5, "냄새": 0.2}),
-    "꽃길":     (["꽃", "향기", "봄", "색", "나비", "피다", "정원"],
-                {"밝기": 0.8, "소리": 0.3, "바람": 0.4, "냄새": 0.9}),
-    "폐허":     (["오래된", "돌담", "흔적", "고대", "역사", "유적", "조용"],
-                {"밝기": 0.5, "소리": 0.1, "바람": 0.6, "냄새": 0.4}),
-    "안개골":   (["안개", "흐림", "습기", "희미", "새벽", "고요"],
-                {"밝기": 0.3, "소리": 0.1, "바람": 0.2, "냄새": 0.6}),
-    "메아리벽": (["소리", "노래", "울림", "메아리", "음악", "바위"],
-                {"밝기": 0.5, "소리": 1.0, "바람": 0.5, "냄새": 0.2}),
 }
 
 
@@ -104,20 +90,13 @@ def save(sb, land: dict):
 
 
 # ── 생김 ─────────────────────────────────────────────────────
-def _kind_of(words, exclude=None) -> tuple:
-    """
-    관심 낱말 묶음이 어느 지형에 가까운가.
-    **이미 있는 지형은 빼고** 본다 — 안 그러면 늘 같은 답이 나온다.
-    """
-    exclude = exclude or set()
+def _kind_of(words) -> tuple:
+    """관심 낱말 묶음이 어느 지형에 가까운가."""
     v = _vec(" ".join(words))
-    joined = " ".join(words)
     best, score = None, -1.0
     for name, (keys, _) in KINDS.items():
-        if name in exclude:
-            continue
         s = float(v @ _vec(" ".join(keys)))
-        if any(k in joined for k in keys):
+        if any(k in " ".join(words) for k in keys):
             s += 0.35                      # 낱말이 직접 겹치면 확실히
         if s > score:
             best, score = name, s
@@ -139,12 +118,10 @@ def maybe_grow(land: dict, interests: dict, log=print) -> dict | None:
     if total < GROW_AFTER:
         return None
 
-    # **이미 있는 지형은 빼고** 고른다.
-    # 예전에는 가장 가까운 하나만 보고, 그게 이미 있으면 그대로 끝났다.
-    # 관심 상위가 바뀌지 않는 한 영영 아무것도 안 생겼다.
-    have = {p["kind"] for p in land["places"]}
-    kind, score = _kind_of([t for t, _ in top], exclude=have)
-    if not kind or score < 0.12:
+    kind, score = _kind_of([t for t, _ in top])
+    if not kind or score < 0.15:
+        return None
+    if any(p["kind"] == kind for p in land["places"]):
         return None
 
     # 집에서 얼마나 먼가 — 나중에 생길수록 멀다 (반경이 넓어진다)
@@ -166,13 +143,31 @@ def maybe_grow(land: dict, interests: dict, log=print) -> dict | None:
 
 # ── 나감 ─────────────────────────────────────────────────────
 def maybe_go(land: dict, state, mood_entry: dict = None, rng=None,
-             log=print) -> dict | None:
+             log=print, village: dict = None) -> dict | None:
     """
     바깥에 나갈까. 멀수록 어렵고, 심심하면 멀리 간다.
     (기분이 행동을 바꾸는 자리 — 금지가 아니라 가중치)
+
+    **마을도 간다.**
+      예전에는 land 의 자연(바다·숲·언덕마루)만 다녔다. 그래서
+      빵집·음악방·작업실이 생겨도 **아무도 가지 않았다.**
+      이웃들은 마을 안을 도는데 몰랑이만 집과 자연 사이를 오갔다.
+      만들어 놓고 못 가는 곳이 있는 것은 세계가 아니다.
     """
     rng = rng or random.Random(time.time_ns())
-    places = land.get("places") or []
+    places = list(land.get("places") or [])
+
+    # 마을 자리도 갈 곳에 넣는다. 집들은 뺀다 (거긴 이웃이 산다 —
+    # 찾아가는 것은 마을 대화가 따로 한다)
+    if village:
+        for name, p in (village.get("places") or {}).items():
+            if name.endswith("네"):
+                continue
+            places.append({
+                "kind": name, "dist": 2.5, "zone": "village",
+                # 마을 자리는 가깝고 사람이 있다 — 환하고 조금 시끄럽다
+                "stim": {"밝기": 0.7, "소리": 0.6, "바람": 0.3, "냄새": 0.5}})
+
     if not places:
         return None
 
@@ -196,7 +191,13 @@ def maybe_go(land: dict, state, mood_entry: dict = None, rng=None,
     first = visits[place["kind"]] == 1
 
     # 지형의 결이 관심에 — 집보다 세게. 나갔으니까.
-    words = KINDS[place["kind"]][0]
+    words = (KINDS.get(place["kind"]) or (None,))[0]
+    if words is None:
+        try:        # 마을 자리는 village 쪽에 결이 있다
+            import village as _vg
+            words = _vg.CAN_GROW.get(place["kind"]) or [place["kind"]]
+        except Exception:
+            words = [place["kind"]]
     bumped = []
     for w in words[:3]:
         old = float((state.interests or {}).get(w, 0.0))
