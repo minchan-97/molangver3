@@ -390,7 +390,14 @@ def main(mode):
                     _born = _land.maybe_grow(_ld, state.interests)
                     _last_mood = (state.moods or [{}])[-1] if getattr(
                         state, 'moods', None) else {}
-                    _went = _land.maybe_go(_ld, state, _last_mood)
+                    # 마을 자리도 갈 곳에 넣는다 (빵집·음악방·작업실…)
+                    try:
+                        import village as _vgg
+                        _vil_for_go = _vgg.load(store.sb)
+                    except Exception:
+                        _vil_for_go = None
+                    _went = _land.maybe_go(_ld, state, _last_mood,
+                                           village=_vil_for_go)
                     _land.save(store.sb, _ld)
                     if _born:
                         _world_todo.append(('heard', _born.get('kind'), '생김'))
@@ -668,6 +675,17 @@ def main(mode):
                 out['world'] = _wmf.describe(_wf)
         except Exception as _we:
             out['world'] = {'error': str(_we)[:80]}
+
+        # **무엇이 돌았는지 적고, 멈춘 것이 있으면 알린다.**
+        # vitals 는 자료를 본다. 이것은 기능을 본다.
+        try:
+            import heartbeat as _hb
+            _hb.record(store.sb, out)
+            _r = _hb.check(store.sb)
+            if _r.get("warn"):
+                out['heartbeat'] = _r
+        except Exception as _he:
+            out['heartbeat'] = {'error': str(_he)[:60]}
 
         # 무너지고 있는지 지켜본다 (막는 일과 재는 일을 나눈다)
         try:
