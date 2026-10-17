@@ -235,7 +235,10 @@ def main(mode):
         if mode == 'stir':
             out['stir'] = _stir(store, state, out)
             store.push_state(state, mode)
-            store.finish_run(mode, out)
+            # finish_run 은 **이름 붙은 인자만** 받고, 그 이름은
+            # organism_runs 의 열이어야 한다 (note 라는 열은 없다).
+            store.finish_run(
+                topic=" ".join((out.get('stir') or {}).get('did') or []))
             print(json.dumps(out, ensure_ascii=False, indent=2))
             return out
 
