@@ -1,0 +1,35 @@
+name: Molang stir
+
+# **몸만 움직이는 가벼운 회차.**
+#
+# LLM 을 부르지 않는다. 방을 옮기고, 바깥에 나가고, 이웃이 다니고,
+# 기분이 바뀐다. 말하는 일은 시간당 워커가 한다.
+#
+# 나이도 안 먹는다 (회차가 안 올라간다). 10분마다 늙으면
+# 하루에 100 번 넘게 늙어서, 기억 옅어짐이 통째로 어긋난다.
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'    # 15분마다
+  workflow_dispatch:
+
+concurrency:
+  group: molang-worker        # 시간당·밤 워커와 겹치지 않게
+  cancel-in-progress: false
+
+jobs:
+  stir:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -q -r requirements.txt
+      - run: python scripts/worker_supabase.py --mode stir
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          # OPENAI_API_KEY 를 **일부러 넣지 않는다.**
+          # 없으면 말하는 자리가 저절로 건너뛴다.
