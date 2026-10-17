@@ -109,13 +109,21 @@ def curiosity_cycle(state, store, deep=False):
     }
 
 
-def maintenance(state):
-    # 관심 감쇠: 초기의 우연한 한 번이 탐색을 영구 독점하지 않게.
-    for k in list(state.interests):
-        state.interests[k] *= .997
-        if state.interests[k] < .002:
-            state.interests.pop(k, None)
-    state.cycle += 1
+def maintenance(state, age: bool = True):
+    """
+    age=False 면 **나이를 먹지 않는다.**
+
+    가벼운 회차(stir)는 10~15분마다 돈다. 거기서도 회차를 올리면
+    하루에 100 번 넘게 늙는다. 기억이 옅어지는 것도, 지도를 다시
+    그리는 것도 회차에 묶여 있으니 **하루 만에 몇 주가 흐르는 꼴**이다.
+    움직이기는 하되 나이는 안 먹는다.
+    """
+    if age:
+        for k in list(state.interests):
+            state.interests[k] *= .997
+            if state.interests[k] < .002:
+                state.interests.pop(k, None)
+        state.cycle += 1
     return rebuild(state, SOM_PATH)
 
 
@@ -146,6 +154,66 @@ def _where():
     return " → ".join(chain) + f" ⇒ {os.path.basename(tail.filename)}:{tail.lineno}"
 
 
+def _stir(store, state, out) -> dict:
+    """
+    LLM 을 부르지 않는 것들만. 돈 것의 이름을 돌려준다.
+    하나가 실패해도 나머지는 돈다 — 몸이 통째로 멈추면 안 된다.
+    """
+    did = []
+
+    try:    # 집 안 — 방을 옮기고 그 자리의 결이 묻는다
+        import home as _hm
+        out['home'] = _hm.tick(store.sb, state)
+        did.append('집')
+    except Exception as e:
+        out['home'] = {'error': str(e)[:60]}
+
+    try:    # 바깥 — 나가 있거나 돌아오거나
+        import home as _hm2
+        out['outing'] = _hm2.outside_tick(store.sb, _hm2.load(store.sb),
+                                          state, mode='stir')
+        did.append('바깥')
+    except Exception:
+        pass
+
+    try:    # 이웃 — 마을을 돌아다닌다 (말은 안 건다)
+        import village as _vg, villagers as _vp
+        _vil = _vg.load(store.sb)
+        _who = _vp.load(store.sb)
+        _moved = _vp.walk(store.sb, _who, _vil, log=lambda *a: None)
+        _vp.save(store.sb, _who)
+        out['village'] = {'where': {k: v.get('where')
+                                    for k, v in _who.items()}}
+        did.append('마을')
+    except Exception:
+        pass
+
+    try:    # 기분 — 아는 것의 상태에서 나온다
+        import mood as _md
+        from molang_store import SupabaseIdentity as _SIs
+        out['mood'] = _md.feel(store.sb, _SIs(store.sb), state)
+        out['mood_bias'] = _md.bias(out['mood'])
+        did.append('기분')
+    except Exception:
+        pass
+
+    try:    # 조용한 생각 — 관심 지형만 움직인다 (LLM 없음)
+        import musing as _ms
+        out['musing'] = _ms.think_many(state, rounds=6,
+                                       log=lambda *a: None)
+        did.append('생각')
+    except Exception:
+        pass
+
+    # 나이는 안 먹는다 — 격자만 다시 맞춘다
+    try:
+        out['topology'] = maintenance(state, age=False)
+    except Exception:
+        pass
+
+    return {'did': did, 'cycle': state.cycle}
+
+
 def main(mode):
     store = OrganismStore()
     store.start_run(mode)
@@ -156,6 +224,20 @@ def main(mode):
         out['resumed'] = {'cycle': state.cycle,
                           'interests': len(state.interests),
                           'observations': len(state.observations)}
+
+        # ── 가벼운 회차 (stir) ──────────────────────────────
+        #
+        # **LLM 없이 몸만 움직인다.** 10~15분마다 돈다.
+        # 방을 옮기고, 바깥에 나가고, 이웃이 다니고, 기분이 바뀐다.
+        # 말하는 일(피우피우·핀코·꿈·먼저 말 걸기)은 하지 않는다.
+        #
+        # 나이도 안 먹는다. 살아는 있되 늙지는 않는 시간이다.
+        if mode == 'stir':
+            out['stir'] = _stir(store, state, out)
+            store.push_state(state, mode)
+            store.finish_run(mode, out)
+            print(json.dumps(out, ensure_ascii=False, indent=2))
+            return out
 
         cyc = None
         # **지금 무엇으로 뜻을 재고 있나.**
@@ -727,6 +809,6 @@ def main(mode):
 
 if __name__ == '__main__':
     ap = argparse.ArgumentParser()
-    ap.add_argument('--mode', choices=['hourly', 'nightly', 'all'],
+    ap.add_argument('--mode', choices=['hourly', 'nightly', 'all', 'stir'],
                     default='hourly')
     main(ap.parse_args().mode)
