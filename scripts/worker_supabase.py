@@ -188,14 +188,14 @@ def _stir(store, state, out) -> dict:
     except Exception:
         pass
 
-    try:    # 기분 — 아는 것의 상태에서 나온다
-        import mood as _md
-        from molang_store import SupabaseIdentity as _SIs
-        out['mood'] = _md.feel(store.sb, _SIs(store.sb), state)
-        out['mood_bias'] = _md.bias(out['mood'])
-        did.append('기분')
-    except Exception:
-        pass
+    # 기분은 **재지 않는다.**
+    #
+    # 기분은 '아는 것의 상태' 에서 나온다. 그런데 stir 에서는 새로
+    # 알게 되는 것이 없으니 늘 같은 값이 나온다. 실제로 15분마다
+    # "심심함(0·0·0)" 으로 덮어써서, 시간당 워커가 만든 기분이
+    # 금방 지워졌다.
+    #
+    # 몸은 움직이되 마음은 그대로 둔다. 기분은 무언가를 겪어야 바뀐다.
 
     try:    # 조용한 생각 — 관심 지형만 움직인다 (LLM 없음)
         import musing as _ms
