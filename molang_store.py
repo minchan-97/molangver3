@@ -150,12 +150,40 @@ class SupabaseIdentity:
 
         # 만료·소멸 제외된 뷰에서만 읽는다
         self._recall = None            # 사실이 바뀌면 지도를 다시 만든다
+
+        # **최근순으로, 넉넉히 읽는다.**
+        #
+        # 예전에는 강도순 상위 400건이었다. 그런데 사실이 645건이 되자
+        # 245건이 창 밖으로 밀려났고, 밀려난 것은 대개 **갓 들어온 것**
+        # 이었다 (새 사실은 강도 0.6 에서 시작한다).
+        # 그 탓에 두 가지가 한꺼번에 어긋났다.
+        #   · 어제 한 말이 프롬프트에 아예 안 올라왔다
+        #   · 성장 기록이 늘 400건으로 보여, 확신 사실이 창 밖으로
+        #     밀려난 것을 측정이 '사라졌다' 로 세었다 (연속성 0.578)
+        #
+        # 창이 움직이면 연속성이 흔들린다. 넉넉히 읽어 창을 넓힌다.
         try:
             self._facts = self.sb.table('molang_facts_active') \
                 .select('id,text,norm_key,kind,strength,trust,seen,source,'
                         'expires_at,owner,updated_at,created_at') \
                 .eq('owner', self.owner) \
-                .order('strength', desc=True).limit(400).execute().data or []
+                .order('updated_at', desc=True).limit(1200) \
+                .execute().data or []
+
+            # 다만 **사람이 승인한 것**은 오래됐다고 잘리면 안 된다.
+            # 그건 이 아이가 기댈 수 있는 몇 안 되는 바닥이다.
+            try:
+                anchors = self.sb.table('molang_facts_active') \
+                    .select('id,text,norm_key,kind,strength,trust,seen,'
+                            'source,expires_at,owner,updated_at,'
+                            'created_at') \
+                    .eq('owner', self.owner).eq('trust', 'human') \
+                    .limit(200).execute().data or []
+                have = {f.get('id') for f in self._facts}
+                self._facts += [f for f in anchors
+                                if f.get('id') not in have]
+            except Exception:
+                pass
         except Exception as e:      # 뷰가 아직 없으면 알려주고 빈 상태로 시작
             self._facts = []
             self._load_error = f"molang_facts_active 읽기 실패: {e}"
@@ -245,7 +273,6 @@ class SupabaseIdentity:
                 _bd.touch(self.sb, _used)
         except Exception:
             pass
-
 
         items = []
         for f in pool:
@@ -368,7 +395,7 @@ class SupabaseIdentity:
         # 'human'(신뢰도 값)이나 'migration' 같은 걸 넣으면 통째로 거부된다.
         # 부르는 쪽이 옛 버전이어도 여기서 막는다.
         if source not in ALLOWED_SOURCES:
-            source = 'user' 
+            source = 'user'
 
         # 방어선 1: 자기 답변 에코는 검역소로
         if is_assistant_echo(fact):
