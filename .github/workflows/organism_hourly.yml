@@ -23,7 +23,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - run: pip install -r requirements.txt
+      - run: pip install -q -r requirements.txt --retries 5 --timeout 60
       - run: python scripts/worker_supabase.py --mode hourly
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
