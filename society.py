@@ -67,9 +67,43 @@ def save(sb, s: dict) -> bool:
         return False
 
 
+# 이름은 화제가 아니다. "슈야가 요즘 몰랑이 얘기를 하더라" 가
+# 모두의 관심을 '몰랑이' 로 만들면, 마을이 한 사람만 쳐다보게 된다.
+_NOT_TOPIC = {"몰랑이", "피우피우", "슈야", "토야", "미피", "사용자"}
+
+# 말끝에서 잘려 나온 꼴. 목록으로는 못 따라간다 — '했다' 를 막으면
+# '됐다' 가, 그걸 막으면 '봤다' 가 올라온다. 그래서 **꼴**로 막는다.
+_TAIL_WORD = re.compile(
+    r"(했다|한다|된다|됐다|되었다|있다|없다|같다|본다|봤다|간다|갔다|"
+    r"온다|왔다|싶다|싶어|느낀다|느꼈다|생각한다|알게|모른다|"
+    r"하고|하며|해서|하면|되고|되어|이고|이며|라서|라고)$")
+
+
 def _top(interests: dict, k: int = 5) -> list:
-    return [w for w, _ in sorted((interests or {}).items(),
-                                 key=lambda kv: -kv[1])[:k]]
+    """
+    옮길 만한 관심만.
+
+    **부스러기와 이름은 뺀다.** 실제로 '했다' 가 모두의 관심 1위가
+    되어, 소문이 "슈야가 요즘 했다 얘기를 하더라" 가 되었다.
+    그러면 관심 지형이 말 토막으로 덮이고, 모임에서도 아무 곳에
+    안 걸린다 (실제로 1:3 으로 계속 떨어졌다).
+    """
+    out = []
+    for w, _ in sorted((interests or {}).items(), key=lambda kv: -kv[1]):
+        if w in _NOT_TOPIC or len(w) < 2:
+            continue
+        if _TAIL_WORD.search(w) and len(w) <= 4:
+            continue
+        try:
+            from organism.curiosity import _is_topic_like
+            if not _is_topic_like(w):
+                continue
+        except Exception:
+            pass
+        out.append(w)
+        if len(out) >= k:
+            break
+    return out
 
 
 def tick(sb, s: dict, who: dict, rng=None, log=print) -> dict:
