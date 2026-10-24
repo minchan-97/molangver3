@@ -101,7 +101,7 @@ class RejectedWrite(Exception):
 
 class SupabaseIdentity:
     def __init__(self, sb, owner: str = 'molang', max_facts_in_prompt: int = 90,
-                 recent_episodes: int = 10):
+                 recent_episodes: int = 10, with_user: bool = False):
         self.sb = sb
         # 한 저장소에 여러 존재가 산다. owner 로 기억을 나눈다.
         # (몰랑이와 피우피우가 같은 표를 쓰되 서로의 기억을 침범하지 않게)
@@ -118,6 +118,11 @@ class SupabaseIdentity:
         self.judgment_rules: list = []
         self.revisions: list = []
         self._dirty: dict[int, dict] = {}
+        self._last_used: list = []      # 이번에 꺼내 쓴 사실 (굳히기용)
+        # **사용자와 마주 앉은 자리인가.**
+        # 앱은 True 로 만든다. 워커는 기본값(False)이라, 혼잣말이나
+        # 이웃 대화에서 꺼낸 것은 세게 굳지 않는다.
+        self.with_user = with_user
         self._identity_version: int = 1
         self.reload()
 
@@ -263,14 +268,22 @@ class SupabaseIdentity:
             pool = self._facts
 
         # **꺼내 쓴 것은 다시 굳는다.**
+        #
         # 옅어지기만 하고 굳는 길이 없으면 오래 둔 기억은 모두 흐려진다.
         # 실제로 대화에 들어간 것만, 그리고 이미 흐려진 것만 올린다.
+        #
+        # 그런데 **어디서 꺼냈느냐**가 다르다. 사용자와 주고받은 자리에서
+        # 꺼내 보이고 아무 말이 없었다면 틀리지 않았다는 뜻이다.
+        # 자기들끼리 돌린 말은 몇 번을 돌아도 새로 확인된 것이 아니다.
+        # 그걸 같은 무게로 굳히면 지어낸 말이 저 혼자 단단해진다.
         try:
             import belief_decay as _bd
             _used = [f for f in pool[:8]
                      if 0.2 < float(f.get("strength") or 0) < 1.0]
             if _used:
-                _bd.touch(self.sb, _used)
+                _bd.touch(self.sb, _used,
+                          with_user=(self.with_user and bool(question)))
+                self._last_used = [f.get("id") for f in _used if f.get("id")]
         except Exception:
             pass
 
@@ -352,6 +365,21 @@ class SupabaseIdentity:
         }).execute()
         self._episodic.append(f"Q: {question[:60]} / A: {(answer or '')[:80]}")
         self._episodic = self._episodic[-self.recent_episodes:]
+
+        # **사용자와 한 번 더 주고받았다** — 꺼내 썼던 것이 틀리지
+        # 않았다는 신호다. 꺼낼 때 한 번, 말이 오간 뒤에 한 번 더 굳는다.
+        if (self.with_user and source in ABSORBABLE
+                and getattr(self, "_last_used", None)):
+            try:
+                import belief_decay as _bd2
+                rows = [f for f in self._facts
+                        if f.get("id") in set(self._last_used)
+                        and 0.2 < float(f.get("strength") or 0) < 0.95]
+                if rows:
+                    _bd2.touch(self.sb, rows, with_user=True)
+            except Exception:
+                pass
+            self._last_used = []
 
         if source not in ABSORBABLE:
             return   # 검색·nudge·자기답변은 여기서 끝
