@@ -76,7 +76,9 @@ if "unified" not in st.session_state:
     load_logic_db_types(u.registry)          # 20종 논리 유형 탑재
     skin.install_molang_persona(u)           # 몰랑이 옷 입힘 (기본값)
     # 정체성을 서버로. skin 다음에 붙여야 DB의 persona 가 이긴다.
-    u.identity = SupabaseIdentity(sb)
+    # **사용자와 마주 앉은 자리**라고 알려 준다.
+    # 여기서 꺼내 쓴 기억은 세게 굳는다 (워커의 혼잣말과 다르게).
+    u.identity = SupabaseIdentity(sb, with_user=True)
     # 사고 트리(판단 구조)도 서버에서 복원 — 없으면 기본 유형으로 시작
     import registry_store, skin_store, purpose
     _n = registry_store.load_into(sb, u.registry)
@@ -663,6 +665,32 @@ with st.sidebar:
         except Exception:
             pass
 
+        # 🏘️ 사회 — **몰랑이를 거치지 않는 일들**
+        try:
+            import society as _soc, council as _cnc
+            _sv = _soc.load(sb)
+            _meets = _sv.get("meets") or []
+            _cs = _sv.get("councils") or []
+            if _meets or _cs:
+                st.markdown("---")
+                st.markdown("### 🏘️ 이웃들 사이")
+                _hot = _soc.hottest(_sv, within_h=24)
+                if _hot:
+                    st.caption(f"　오늘 가장 자주 본 사이: "
+                               f"**{_hot['a']}·{_hot['b']}** "
+                               f"({_hot.get('place')}, {_hot.get('times')}번)")
+                st.caption(f"　마주침 {len(_meets)}번 · 떠도는 말 "
+                           f"{sum(len(v) for v in (_sv.get('rumors') or {}).values())}개")
+                for _c in _cs[-2:]:
+                    if _c.get("picked"):
+                        _t = (_c.get("tally") or [("", 0, 0)])[0]
+                        st.caption(f"　🗳️ **{_c['picked']}** 을(를) 짓기로 "
+                                   f"({_t[1]}:{_t[2]})")
+                    else:
+                        st.caption("　🗳️ 모임에서 과반을 못 넘음")
+        except Exception:
+            pass
+
         # 💞 사이 — 누구와 얼마나 가까운가
         try:
             import bonds as _bn
@@ -1104,6 +1132,27 @@ with st.sidebar:
                 st.caption(growth_export.summary_line(_gdata))
             except Exception as e:
                 st.caption(f"성장 기록 준비 실패: {str(e)[:60]}")
+
+            # 사회 기록 — **따로 뽑는다.**
+            #
+            # 위의 성장 기록은 한 개체가 어떻게 자랐나를 담는다.
+            # 그런데 이제 이웃들이 서로 만나고, 관심이 옮고,
+            # 다 같이 무엇을 지을지 정한다. 그건 개체의 성장이 아니라
+            # **사회의 성장**이다. 한 파일에 섞으면 둘 다 흐려진다.
+            try:
+                import society_export
+                _sdata = society_export.collect(sb)
+                st.download_button(
+                    "🏘️ 사회 기록 받기 (.pkl)",
+                    data=__import__("pickle").dumps(_sdata),
+                    file_name=f"molang_society_"
+                              f"{__import__('time').strftime('%m%d_%H%M')}.pkl",
+                    mime="application/octet-stream",
+                    key=uk("society_dl"))
+                for _line in society_export.report(_sdata).split("\n"):
+                    st.caption(_line)
+            except Exception as e:
+                st.caption(f"사회 기록 준비 실패: {str(e)[:60]}")
         except Exception as e:
             st.caption(f"백업 준비 실패: {e}")
     else:
