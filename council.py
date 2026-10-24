@@ -93,8 +93,13 @@ def hold(sb, vil: dict, who: dict, s: dict, rng=None, log=print) -> dict:
             continue
 
         # **바라는 이가 있고 반대할 이유가 없으면 따라준다.**
+        #
         # 관심이 아예 0 인 사람은 '상관없다' 지 '싫다' 가 아니다.
-        if yes >= 2:
+        # 넷 중 셋이 또렷이 바라야 짓는다면 아무것도 안 지어진다
+        # (실제로 1:3 으로 계속 떨어졌다). 마을 일은 혼자 쓰자고
+        # 짓는 게 아니다 — 바라는 이가 하나라도 있고 말리는 이가
+        # 없으면 따라주는 것이 사회다.
+        if yes >= 1:
             for p in voters:
                 if not votes[p]:
                     opp = _voice((who[p] or {}).get("interests") or {},
@@ -109,6 +114,8 @@ def hold(sb, vil: dict, who: dict, s: dict, rng=None, log=print) -> dict:
                                          words) for p in voters)})
 
     board.sort(key=lambda b: (-b["yes"], -b["pull"]))
+    if not board:
+        return {"skip": "아무도 끌리는 곳이 없음"}
     top = board[0]
     passed = top["yes"] * 2 > len(voters)
 
