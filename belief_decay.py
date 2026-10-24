@@ -38,8 +38,20 @@ DEFAULT = (60.0, 0.25)
 
 CONFLICT_CUT = 0.12       # 어긋났을 때 양쪽이 깎이는 폭
 MISS_CUT = 0.08           # 꺼내야 할 자리에서 못 꺼냈을 때
-USE_GAIN = 0.10           # 꺼내 쓰면 다시 굳는 폭
+# 꺼내 쓰면 다시 굳는 폭.
+#
+# **어디서 꺼냈느냐로 나눈다.**
+#   혼잣말·이웃 대화에서 꺼낸 것은 조금만 (자기들끼리 돌린 것이다)
+#   **사용자와의 대화**에서 꺼낸 것은 세게
+#
+# 사람에게 꺼내 보이고 아무 말이 없었다면, 그것은 틀리지 않았다는
+# 뜻이다. 암묵적 확인이다. 반면 자기들끼리 주고받은 말은 몇 번을
+# 돌아도 새로 확인된 것이 아니다 — 그걸 같은 무게로 굳히면
+# 지어낸 말이 저 혼자 단단해진다.
+USE_GAIN = 0.04           # 기본 (혼잣말·이웃)
+USE_GAIN_USER = 0.12      # 사용자와의 대화에서 꺼낸 것
 USE_MAX = 1.0
+USER_MAX = 0.95           # 사람이 직접 승인한 것(1.0)과는 구별한다
 TOKEN = re.compile(r"[가-힣A-Za-z]{2,}")
 
 
@@ -187,21 +199,30 @@ def apply_conflict(sb, new_text: str, facts: list, log=print) -> dict:
     return {"n": len(done), "lowered": done}
 
 
-def touch(sb, facts: list, log=None) -> int:
+def touch(sb, facts: list, log=None, with_user: bool = False) -> int:
     """
-    **꺼내 쓰면 다시 굳는다.**
+    **꺼내 쓰면 다시 굳는다.** 다만 어디서 꺼냈느냐로 폭이 다르다.
 
     옅어지기만 하고 굳는 길이 없으면 오래 둔 것은 모두 흐려진다.
     사람도 자주 꺼내는 기억은 또렷해진다 — 쓰임이 곧 되새김이다.
-    (대화에 실제로 들어간 사실에만 적용한다)
+
+    with_user=True 는 **사용자와 주고받은 자리**에서 꺼냈다는 뜻이다.
+    그 자리에서 꺼내 보이고 아무 말이 없었다면 틀리지 않았다는
+    뜻이므로 세게 굳는다. 자기들끼리 돌린 말은 몇 번을 돌아도
+    새로 확인된 것이 아니다.
+
+    다만 0.95 를 넘지 않는다. 사람이 직접 "맞아" 라고 한 것(1.0)과
+    **말없이 지나간 것**은 같을 수 없다.
     """
     n = 0
+    gain = USE_GAIN_USER if with_user else USE_GAIN
+    cap = USER_MAX if with_user else USE_MAX
     for f in (facts or [])[:12]:
         fid = f.get("id")
         old = float(f.get("strength") or 0)
-        if not fid or old >= USE_MAX:
+        if not fid or old >= cap:
             continue
-        new = round(min(USE_MAX, old + USE_GAIN), 3)
+        new = round(min(cap, old + gain), 3)
         try:
             sb.table("molang_facts").update(
                 {"strength": new}).eq("id", fid).execute()
