@@ -185,6 +185,22 @@ def _stir(store, state, out) -> dict:
         out['village'] = {'where': {k: v.get('where')
                                     for k, v in _who.items()}}
         did.append('마을')
+
+        # **이웃끼리 마주친다.** LLM 없이.
+        #
+        # 지금까지 이들은 몰랑이하고만 말했다. 그건 사회가 아니라
+        # 몰랑이를 축으로 한 바퀴살이다. 여기서는 같은 자리에 있는
+        # 이들끼리 관심이 옮고, 소문이 돌고, 사이가 쌓인다.
+        # 실제 말은 hourly 에서 하루 한 번만 옮긴다 (비용).
+        try:
+            import society as _sc
+            _s = _sc.load(store.sb)
+            out['society'] = _sc.tick(store.sb, _s, _who,
+                                      log=lambda *a: None)
+            _sc.save(store.sb, _s)
+            did.append('사회')
+        except Exception:
+            pass
     except Exception:
         pass
 
@@ -256,6 +272,38 @@ def main(mode):
             pass
 
         _world_todo = []        # 이 회차에 드러난 곳들 (끝에 한 번 저장)
+
+        # 이웃끼리의 말 — **그날 가장 짙은 만남 하나만.**
+        #
+        # stir 에서 쌓인 마주침 중 가장 자주 본 짝을 고른다.
+        # 다섯이 서로 말하면 쌍이 열이라, 매번 부르면 비용이 터진다.
+        # 만나는 것은 15분마다, 말하는 것은 한 시간에 한 번.
+        if mode in ('hourly', 'all'):
+            try:
+                import society as _sc2
+                _s2 = _sc2.load(store.sb)
+                _hot = _sc2.hottest(_s2)
+                if _hot:
+                    out['peer_meet'] = {
+                        'who': [_hot['a'], _hot['b']],
+                        'place': _hot.get('place'),
+                        'topic': _hot.get('topic'),
+                        'times': _hot.get('times')}
+                    log(f"  🫂 {_hot['a']}·{_hot['b']}가 "
+                        f"{_hot.get('place')}에서 "
+                        f"{_hot.get('times')}번 마주쳤다 "
+                        f"({_hot.get('topic')})")
+                    try:    # 말로 옮기는 자리 (talk_pair 가 생기면 돈다)
+                        import villagers as _vp2
+                        if hasattr(_vp2, 'talk_pair'):
+                            out['peer_talk'] = _vp2.talk_pair(
+                                store.sb, _hot['a'], _hot['b'],
+                                _hot.get('topic') or '',
+                                os.environ.get('OPENAI_API_KEY'))
+                    except Exception:
+                        pass
+            except Exception:
+                pass
 
         # 여행 — **어느 모드에서도 돈다.**
         #
@@ -684,6 +732,37 @@ def main(mode):
                 out['map_v'] = _smv.rebuild(store.sb)
             except Exception as e:
                 out['map_v'] = {'error': str(e)[:120]}
+
+            # **다 같이 무엇을 지을지 정한다.** 이틀에 한 번. LLM 없이.
+            #
+            # 지금까지 마을에 무엇이 생길지는 관심의 합이 정했다.
+            # 그건 날씨 같은 것이지 누가 정한 일이 아니다.
+            # 여기서는 각자 찬성하거나 반대하고, 과반이면 지어진다.
+            # 그리고 누가 어느 쪽에 섰는지가 남는다.
+            try:
+                import council as _cc, society as _sc3
+                import village as _vg3, villagers as _vp3
+                _s3 = _sc3.load(store.sb)
+                if _cc.due(_s3):
+                    _vil3 = _vg3.load(store.sb)
+                    _who3 = dict(_vp3.load(store.sb) or {})
+                    # 몰랑이도 한 표를 가진다 (자기 마을이다)
+                    _who3['몰랑이'] = {'interests': dict(state.interests)}
+                    try:
+                        import piupiu as _pp3
+                        _who3['피우피우'] = {
+                            'interests': dict(
+                                (_pp3.load(store.sb) or {}).get(
+                                    'interests') or {})}
+                    except Exception:
+                        pass
+                    out['council'] = _cc.hold(store.sb, _vil3, _who3, _s3)
+                    _vg3.save(store.sb, _vil3)
+                    _sc3.save(store.sb, _s3)
+                else:
+                    out['council'] = {'skip': '아직 때가 아님'}
+            except Exception as e:
+                out['council'] = {'error': str(e)[:80]}
 
             try:    # 확신은 굳기만 하지 않는다 — 묵은 것은 옅어진다
                 import belief_decay as _bd
