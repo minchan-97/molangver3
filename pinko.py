@@ -257,7 +257,12 @@ def chat(sb, pk: dict, place: str, who: str, ident, topic: str,
                 + (f"네가 아는 것: {'; '.join(knows)}\n" if knows else "")
                 + "규칙: 반말, 한 문장, 이모지 없음. "
                   "네 일과 네가 사는 곳에서 나온 말을 해라. "
-                  "모르는 것은 모른다고 하고 지어내지 마라.")
+                  "모르는 것은 모른다고 하고 지어내지 마라. "
+                  # **반가움.** 핀코에게 줄 수 있는 유일한 기분이다.
+                  # 움직이지 않으니 쓸쓸함은 성립하지 않지만,
+                  # 오랜만에 온 쪽을 반가워하는 것은 말에 묻어난다.
+                  "오랜만에 온 사이라면 그 기색이 말에 묻어나되, "
+                  "호들갑 떨지는 마라.")
             r = c.chat.completions.create(
                 model="gpt-4o-mini", temperature=0.85, max_tokens=70,
                 messages=[{"role": "system", "content": sysmsg},
