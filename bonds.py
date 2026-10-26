@@ -144,6 +144,45 @@ def closest(bd: dict, who: str, n: int = 3) -> list:
     return sorted(out, key=lambda x: -x[1])[:n]
 
 
+def since(bd: dict, a: str, b: str) -> float:
+    """마지막으로 본 지 며칠. 한 번도 안 봤으면 None."""
+    v = bd.get(key(a, b))
+    last = float((v or {}).get("last_at") or 0)
+    if not last:
+        return None
+    return (time.time() - last) / 86400
+
+
+def greeting(bd: dict, a: str, b: str) -> str:
+    """
+    **반가움.** 핀코에게 줄 수 있는 유일한 기분이다.
+
+    핀코는 움직이지 않는다. 쓸쓸해도 갈 데가 없으니 쓸쓸함은
+    성립하지 않고, 자기 자리를 지키는 것이 그 애의 됨됨이다.
+    그런데 22 번을 만난 사이라면, 오랜만에 온 쪽을 반가워하는 것은
+    자연스럽다. 그건 **움직이지 않아도 말에 묻어난다.**
+
+    새로 만들 것이 없다 — 몇 번 만났고 언제가 마지막인지는
+    이미 bonds 에 있다.
+    """
+    v = bd.get(key(a, b))
+    if not v:
+        return "처음 보는 사이다."
+    met = int(v.get("met") or 0)
+    d = since(bd, a, b)
+    if d is None:
+        return "처음 보는 사이다."
+    if d < 0.3:
+        return "방금도 봤다." if met > 3 else "조금 전에 봤다."
+    if d < 1.5:
+        return "자주 오는 사이다." if met >= 8 else "요새 자주 본다."
+    if d < 5:
+        return "며칠 만이다."
+    if d < 14:
+        return "한참 안 보이더니 왔다."
+    return "아주 오랜만이다. 잘 지냈나 싶다."
+
+
 def context_line(bd: dict, a: str, b: str, cue: str = "") -> str:
     """
     대화 프롬프트에 — **이 상대와 전에 무슨 얘기를 했나.**
@@ -153,7 +192,8 @@ def context_line(bd: dict, a: str, b: str, cue: str = "") -> str:
     if not v:
         return ""
     talks = recall(bd, a, b, cue)
-    line = f"[{b}와의 사이] {v.get('met', 0)}번 만남"
+    line = (f"[{b}와의 사이] {v.get('met', 0)}번 만남 · "
+            + greeting(bd, a, b))
     tops = sorted((v.get("topics") or {}).items(), key=lambda x: -x[1])[:3]
     if tops:
         line += " · 자주 나온 얘기: " + ", ".join(t for t, _ in tops)
