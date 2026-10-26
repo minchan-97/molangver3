@@ -119,6 +119,14 @@ def tick(sb, s: dict, who: dict, rng=None, log=print) -> dict:
         if p:
             byplace.setdefault(p, []).append(name)
 
+    # **기분이 먼저.** 만났는지 혼자인지가 기분을 바꾸고,
+    # 그 기분이 다음 발걸음을 바꾼다.
+    try:
+        import feelings as _fl
+        s["feel"] = _fl.tick(who, byplace, log=log)
+    except Exception:
+        pass
+
     met = []
     for place, names in byplace.items():
         if len(names) < 2:
