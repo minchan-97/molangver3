@@ -171,12 +171,37 @@ def walk(sb, who: dict, vil: dict, rng=None, log=print) -> dict:
         if fresh and rng.random() < 0.6:
             cand = fresh
         if name == "미피":
+            # 미피는 집에서 먼 데는 안 간다.
+            # **다만 쓸쓸하면 멀어도 간다.** 아기라고 혼자 두는 것은
+            # 돌보는 게 아니다 (30회차 중 27번을 혼자 보냈다).
             import village as _vg
+            _far = 4.0
+            try:
+                import feelings as _fl0
+                if _fl0.of(v)["lonely"] >= 0.5:
+                    _far = 99.0
+            except Exception:
+                pass
             cand = [x for x in cand
-                    if _vg.distance(vil, p.get("home"), x) <= 4.0] or cand
+                    if _vg.distance(vil, p.get("home"), x) <= _far] or cand
         if not cand:
             continue
-        v["where"] = rng.choice(cand)
+
+        # **기분이 발걸음을 바꾼다.** 금지가 아니라 가중치로.
+        #   쓸쓸하면 사람이 있는 쪽으로
+        #   들뜨면 안 가본 쪽으로
+        # (미피가 혼자 작업실에 남아 있던 것을 이것이 푼다)
+        try:
+            import feelings as _fl
+            crowd = {}
+            for _n2, _v2 in who.items():
+                if _n2 != name and _v2.get("where"):
+                    crowd[_v2["where"]] = crowd.get(_v2["where"], 0) + 1
+            w = [_fl.pull(v, x, crowd.get(x, 0), x in been) for x in cand]
+            v["where"] = rng.choices(cand, weights=w, k=1)[0]
+        except Exception:
+            v["where"] = rng.choice(cand)
+
         v.setdefault("been", [])
         if v["where"] not in v["been"]:
             v["been"].append(v["where"])
