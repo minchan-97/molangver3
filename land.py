@@ -238,4 +238,3 @@ def describe(land: dict) -> str:
     return "[바깥] " + " · ".join(
         f"{p['kind']}(거리 {p['dist']}{', 가본 적 없음' if not v.get(p['kind']) else ''})"
         for p in ps)
-
