@@ -195,12 +195,30 @@ def _stir(store, state, out) -> dict:
         try:
             import society as _sc
             _s = _sc.load(store.sb)
-            out['society'] = _sc.tick(store.sb, _s, _who,
-                                      log=lambda *a: None)
+            # log 를 넘겨야 💭 기분 줄이 찍힌다.
+            # (안 넘기면 돌고 있는지 조용히 알 수 없다)
+            out['society'] = _sc.tick(store.sb, _s, _who, log=log)
             _sc.save(store.sb, _s)
+
+            # **기분은 villagers 에 저장해야 남는다.**
+            # society.tick 이 _who 안의 feel 을 고치는데, 그걸 다시
+            # 저장하지 않으면 다음 회차에 0 부터 시작한다
+            # (실제로 마주침이 19번인데 기쁨이 0 이었다).
+            try:
+                import villagers as _vps
+                _vps.save(store.sb, _who)
+            except Exception:
+                pass
+
+            try:
+                import feelings as _fl
+                out['feel'] = {n: _fl.name(_fl.of(v))
+                               for n, v in _who.items()}
+            except Exception:
+                pass
             did.append('사회')
-        except Exception:
-            pass
+        except Exception as _se:
+            out['society'] = {'error': str(_se)[:60]}
     except Exception:
         pass
 
@@ -241,6 +259,27 @@ def main(mode):
                           'interests': len(state.interests),
                           'observations': len(state.observations)}
 
+        # **지금 무엇으로 뜻을 재고 있나.**
+        #
+        # 한 줄 찍어 두지 않으면 해시인 채로 도는 것이 조용히 지나간다.
+        # 전에는 이 블록이 stir 의 return 아래에 있어서 가벼운 회차에서는
+        # 아예 안 찍혔고, 한 번에 try 로 묶여 있어 vectors 가 실패하면
+        # 지도 줄까지 같이 사라졌다. **따로, 그리고 맨 앞에서** 찍는다.
+        try:
+            import vectors as _vc
+            out['vectors'] = _vc.source()
+            log(f"  🧭 벡터: {_vc.source()}")
+        except Exception as _ve:
+            out['vectors'] = f"못 읽음: {str(_ve)[:40]}"
+            log(f"  🧭 벡터: 못 읽음 ({str(_ve)[:40]})")
+        try:
+            import mapsource as _ms
+            out['map_use'] = _ms.which()
+            log(f"  🗺️ 쓰는 지도: {_ms.which()}")
+        except Exception as _me:
+            out['map_use'] = f"못 읽음: {str(_me)[:40]}"
+            log(f"  🗺️ 쓰는 지도: 못 읽음 ({str(_me)[:40]})")
+
         # ── 가벼운 회차 (stir) ──────────────────────────────
         #
         # **LLM 없이 몸만 움직인다.** 10~15분마다 돈다.
@@ -259,18 +298,6 @@ def main(mode):
             return out
 
         cyc = None
-        # **지금 무엇으로 뜻을 재고 있나.**
-        # 한 줄 찍어 두지 않으면, 해시인 채로 도는 것이 조용히 지나간다.
-        try:
-            import vectors as _vc
-            out['vectors'] = _vc.source()
-            log(f"  🧭 벡터: {_vc.source()}")
-            import mapsource as _ms
-            out['map_use'] = _ms.which()
-            log(f"  🗺️ 쓰는 지도: {_ms.which()}")
-        except Exception:
-            pass
-
         _world_todo = []        # 이 회차에 드러난 곳들 (끝에 한 번 저장)
 
         # 이웃끼리의 말 — **그날 가장 짙은 만남 하나만.**
