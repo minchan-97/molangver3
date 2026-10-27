@@ -197,7 +197,7 @@ def _stir(store, state, out) -> dict:
             _s = _sc.load(store.sb)
             # log 를 넘겨야 💭 기분 줄이 찍힌다.
             # (안 넘기면 돌고 있는지 조용히 알 수 없다)
-            out['society'] = _sc.tick(store.sb, _s, _who, log=log)
+            out['society'] = _sc.tick(store.sb, _s, _who, log=print)
             _sc.save(store.sb, _s)
 
             # **기분은 villagers 에 저장해야 남는다.**
@@ -268,17 +268,17 @@ def main(mode):
         try:
             import vectors as _vc
             out['vectors'] = _vc.source()
-            log(f"  🧭 벡터: {_vc.source()}")
+            print(f"  🧭 벡터: {_vc.source()}")
         except Exception as _ve:
             out['vectors'] = f"못 읽음: {str(_ve)[:40]}"
-            log(f"  🧭 벡터: 못 읽음 ({str(_ve)[:40]})")
+            print(f"  🧭 벡터: 못 읽음 ({str(_ve)[:40]})")
         try:
             import mapsource as _ms
             out['map_use'] = _ms.which()
-            log(f"  🗺️ 쓰는 지도: {_ms.which()}")
+            print(f"  🗺️ 쓰는 지도: {_ms.which()}")
         except Exception as _me:
             out['map_use'] = f"못 읽음: {str(_me)[:40]}"
-            log(f"  🗺️ 쓰는 지도: 못 읽음 ({str(_me)[:40]})")
+            print(f"  🗺️ 쓰는 지도: 못 읽음 ({str(_me)[:40]})")
 
         # ── 가벼운 회차 (stir) ──────────────────────────────
         #
@@ -316,7 +316,7 @@ def main(mode):
                         'place': _hot.get('place'),
                         'topic': _hot.get('topic'),
                         'times': _hot.get('times')}
-                    log(f"  🫂 {_hot['a']}·{_hot['b']}가 "
+                    print(f"  🫂 {_hot['a']}·{_hot['b']}가 "
                         f"{_hot.get('place')}에서 "
                         f"{_hot.get('times')}번 마주쳤다 "
                         f"({_hot.get('topic')})")
