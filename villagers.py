@@ -290,7 +290,12 @@ def chat(sb, who: dict, name: str, mol_ident, topic: str,
     except Exception:
         pass
     try:
-        mol_ident._reinforce_or_add(f"{name}는 {line[:60]}", source="peer")
+        # 핀코와 같다 — **들은 말은 바로 믿지 않는다.**
+        import hearsay as _hs
+        _j = _hs.judge(line, name, knows)
+        if _j.get("take"):
+            mol_ident._reinforce_or_add(f"{name}는 {line[:60]}",
+                                        source="peer", speaker=name)
     except Exception:
         pass
     log(f"  🏘️ {name}: {line[:50]}")
