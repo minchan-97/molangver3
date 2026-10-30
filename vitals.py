@@ -97,12 +97,36 @@ def echo_facts(sb, limit: int = 300) -> dict:
     지금은 출처(source)만 있고 **전달 경로**가 없어서, 글이 겹치는 것으로
     짐작한다. 완전하지는 않지만 번지는 것은 잡힌다.
     """
+    # **경로가 있으면 그것으로 센다.**
+    # 글 겹침은 짐작이다. chain 은 기록이다.
     try:
         rows = (sb.table("molang_facts")
-                .select("id,text,source,strength,created_at")
+                .select("id,text,source,strength,created_at,chain")
                 .order("id", desc=True).limit(limit).execute().data) or []
     except Exception:
-        return {"n": 0}
+        try:        # chain 열이 아직 없는 판
+            rows = (sb.table("molang_facts")
+                    .select("id,text,source,strength,created_at")
+                    .order("id", desc=True).limit(limit).execute().data) or []
+        except Exception:
+            return {"n": 0}
+
+    # 1) 기록으로 — 내가 한 말이 남을 거쳐 돌아온 것
+    by_chain = []
+    try:
+        import hearsay as _hs
+        for r in rows:
+            ch = r.get("chain") or []
+            if _hs.is_echo(ch):
+                by_chain.append({
+                    "text": (r.get("text") or "")[:50],
+                    "chain": ch, "id": r.get("id"),
+                    "strength": r.get("strength"), "by": "경로"})
+    except Exception:
+        pass
+    if by_chain:
+        return {"n": len(by_chain), "items": by_chain[:5], "how": "경로"}
+    # 2) 경로가 없으면 글 겹침으로 짐작한다 (옛 자료)
     seen, echoes = {}, []
     for r in rows:
         t = (r.get("text") or "")
@@ -120,7 +144,7 @@ def echo_facts(sb, limit: int = 300) -> dict:
                     "strength": [a.get("strength"), b.get("strength")]})
         else:
             seen[core] = r
-    return {"n": len(echoes), "items": echoes[:5]}
+    return {"n": len(echoes), "items": echoes[:5], "how": "글 겹침"}
 
 
 def recovery(sb, hours: int = 72) -> dict:
