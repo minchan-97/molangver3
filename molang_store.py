@@ -414,7 +414,7 @@ class SupabaseIdentity:
     # ---------- 사실 갱신 ----------
 
     def _reinforce_or_add(self, fact: str, source: str = 'user',
-                          speaker: str = '',
+                          speaker: str = '', chain: list = None,
                           step: float = 0.25):
         fact = fact.strip()
         if not fact:
@@ -469,12 +469,37 @@ class SupabaseIdentity:
         except Exception:
             _about, _why = "unknown", ""
 
+        # **들은 말은 낮게 시작한다.**
+        #
+        # 사용자가 한 말(0.6)과 이웃·핀코에게 들은 말을 같은 무게로
+        # 넣으면, 사회가 커질수록 들은 말이 아는 것을 덮는다.
+        # 쓰이면 오르고 안 쓰이면 내려간다 — 그 판단은 나중에 한다.
+        _start = 0.6
+        if source in ("village", "peer"):
+            try:
+                import hearsay as _hs2
+                _start = _hs2.HEARSAY_STRENGTH
+            except Exception:
+                _start = 0.35
+
+        # **누구를 거쳐 왔나.**
+        #
+        # 몰랑이가 한 말이 피우피우를 거쳐 돌아오면, 같은 근원인데
+        # 두 번 센 것이 된다. 독립된 확인이 아닌데 확신만 오른다.
+        # 글이 겹치는 것으로 짐작하지 않고 **기록으로** 남긴다.
+        try:
+            import hearsay as _hs3
+            _chain = _hs3.chain_of(fact, speaker or source, chain)
+        except Exception:
+            _chain = [speaker or source]
+
         row = {
             'text': fact,
             'norm_key': normalize(fact),
             'about': _about,
+            'chain': _chain,
             'kind': kind,
-            'strength': 0.6,
+            'strength': _start,
             'trust': 'derived',        # 새 사실은 절대 human이 아니다
             'seen': 1,
             'source': source,
