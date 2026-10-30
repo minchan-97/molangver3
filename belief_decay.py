@@ -100,9 +100,13 @@ SINGLE = re.compile(
 
 # 서로 반대인 말 — 같은 대상에 대해 이러면 모순이다.
 # "겁이 많다" 와 "겁이 많지 않다" 는 둘 다 참일 수 없다.
+# 같은 말을 여러 꼴로 한다. '겁이 많다' 와 '겁을 낸다' 와 '겁내는' 이
+# 다 같은 얘기인데, 하나만 적어두면 진짜 모순을 놓친다.
+# (실제로 "겁을 내는 경향이 있다" ↔ "겁이 많지 않구나" 를 못 잡았다)
 OPPOSITE = [
-    (re.compile(r"(겁이 많|무서워하|두려워하)(?!지 않|지는 않)"),
-     re.compile(r"(겁이 많지 않|무서워하지 않|안 무서워|두려워하지 않)")),
+    (re.compile(r"(겁이 많|겁을 내|겁내|무서워하|두려워하)(?!지 않|지는 않)"),
+     re.compile(r"(겁이 많지 않|겁을 내지 않|겁내지 않|무서워하지 않|"
+                r"안 무서워|두려워하지 않)")),
     (re.compile(r"좋아한(?!다고|지 않)"), re.compile(r"(좋아하지 않|싫어한)")),
     (re.compile(r"관심이 (많|있)"), re.compile(r"관심이 (없|적)")),
     (re.compile(r"(잘 안|모른)"), re.compile(r"(잘 알|안다)")),
@@ -115,10 +119,99 @@ def _subject(text: str) -> str:
     return m.group(1) if m else ""
 
 
+# 흔한 말은 '무엇에 대한 말인가' 를 가르는 데 쓸모가 없다.
+_BLAND = {"사용자", "몰랑이", "피우피우", "슈야", "토야", "미피",
+          "것", "것을", "것이", "것에", "대해", "대한",
+          "알게", "되었다", "됐다", "한다", "하는", "있다", "없다",
+          "있다는", "경향", "경향이", "같다", "구나", "이다",
+          "좋아한다", "싫어한다", "생각한다", "느낀다",
+          "모른다", "안다", "잘", "더", "매우", "정말", "요즘",
+          "이미", "약간", "조금", "아주"}
+
+
+# 조사를 떼지 않으면 '피우피우가' 와 '피우피우는' 이 서로 다른 말이 되어,
+# 같은 주어인데도 '한쪽에만 있는 알맹이' 로 세어진다.
+_JOSA = re.compile(r"(은|는|이|가|을|를|의|에|도|만|과|와|로|으로|에게|"
+                   r"에서|부터|까지|라는|이라는)$")
+
+
+def _stem(w: str) -> str:
+    if len(w) <= 2:
+        return w
+    cut = _JOSA.sub("", w)
+    return cut if len(cut) >= 2 else w
+
+
+def _topic_of(text: str) -> set:
+    """
+    **무엇에 대한 말인가** — 주어와 흔한 말을 걷어낸 알맹이.
+    조사를 떼고 본다 ('새로운 것에' 와 '새로운 것을' 은 같은 얘기다).
+    """
+    subj = _subject(text)
+    out = set()
+    for w in TOKEN.findall(text or ""):
+        s = _stem(w)
+        if s in _BLAND or s == subj or len(s) < 2:
+            continue
+        out.add(s)
+    return out
+
+
+# 서술 쪽 낱말 — 이것만 남으면 '대상을 안 밝힌' 것이다
+_PRED = re.compile(r"(겁|무서|두려|좋아|싫어|관심|알|모르|많|적|없|있|않)")
+
+
+def _vague(ws: set) -> bool:
+    """남은 것이 전부 서술 쪽 낱말인가 (= 대상을 안 밝혔다)."""
+    return all(_PRED.search(w) for w in ws)
+
+
 def _opposed(a: str, b: str) -> bool:
-    """같은 대상에 대해 정반대로 말하는가."""
-    if _subject(a) != _subject(b) or not _subject(a):
+    """
+    같은 대상에 대해 정반대로 말하는가.
+
+    **주어만 보면 안 된다.** 주어가 같아도 무엇에 대한 말인지가
+    다르면 모순이 아니다. 실제로 이런 것들이 모순으로 걸려
+    같은 질문을 네다섯 번씩 보냈다.
+
+      "사용자는 백일몽 노래를 좋아한다"
+      "사용자는 출근을 좋아하지 않는다"      ← 둘 다 참이다
+
+      "몰랑이는 발효를 잘 안다"
+      "몰랑이는 음악을 잘 모른다"            ← 둘 다 참이다
+
+    반대말만 보고 판정하면, 사실이 늘수록 비교할 쌍이 늘어
+    **오탐이 빠르게 불어난다.** 그래서 알맹이가 겹칠 때만 본다.
+    """
+    sa, sb = _subject(a), _subject(b)
+    if not sa or sa != sb:
         return False
+
+    # 무엇에 대한 말인지가 겹쳐야 한다
+    ta, tb = _topic_of(a), _topic_of(b)
+    if not ta or not tb:
+        return False
+    shared = ta & tb
+    if not shared:
+        return False
+    # 한쪽에만 있는 알맹이가 너무 많으면 다른 얘기다.
+    #
+    # 다만 **서술 쪽 낱말은 원래 한쪽에만 있다** ('겁을 내는' 과
+    # '겁이 많지' 는 같은 뜻인데 글자가 다르다). 그래서 빡빡하게
+    # 보면 진짜 모순을 놓친다. 넉넉히 둔다 — 반대말이 걸린다는 것이
+    # 이미 같은 서술을 다룬다는 뜻이기 때문이다.
+    if len(ta ^ tb) > len(shared) * 4 + 2:
+        return False
+
+    # **무엇에 대해 그런가**가 다르면 모순이 아니다.
+    #
+    # "색에 겁이 많다" 와 "새로운 것에 겁이 많지 않다" 는 둘 다 참이다.
+    # 한쪽에만 '색', 다른 쪽에만 '새로운' 이 있으면 **다른 대상을**
+    # 말하는 것이다. 양쪽 다 대상을 밝혔는데 그것이 안 겹치면 뺀다.
+    only_a, only_b = ta - tb, tb - ta
+    if only_a and only_b and not (_vague(only_a) or _vague(only_b)):
+        return False
+
     for pos, neg in OPPOSITE:
         if (pos.search(a) and neg.search(b)) or (neg.search(a) and pos.search(b)):
             return True
