@@ -953,9 +953,22 @@ with st.sidebar:
                       .in_("rule", ["purpose_sub", "purpose_core"])
                       .is_("error", "null")
                       .order("id", desc=True).limit(6).execute().data) or []
+            # 하위 목적은 molang_purposes 에 들어가니 그걸로 거른다.
             _done = {p.get("purpose") for p in purpose_growth.load_subs(sb, False)}
-            _props = [p for p in _props
-                      if (p.get("payload") or {}).get("purpose") not in _done][:3]
+
+            # **핵심 목적은 거기 안 들어간다.** 정체성에 바로 쓰인다.
+            # 그래서 승인해도 목록에서 사라지지 않았다.
+            # 지금 페르소나가 그 문장을 품고 있으면 이미 받아들인 것이다.
+            _persona = (u.identity.persona or "")
+
+            def _already(p):
+                _pl = p.get("payload") or {}
+                if p.get("rule") == "purpose_core":
+                    _new = (_pl.get("new") or "").strip()
+                    return bool(_new) and _new in _persona
+                return _pl.get("purpose") in _done
+
+            _props = [p for p in _props if not _already(p)][:3]
         except Exception:
             _props = []
         if _props:
@@ -974,6 +987,13 @@ with st.sidebar:
                 _r = purpose_growth.accept(sb, u.identity, _p)
                 if _r.get("ok"):
                     outbox.mark_sent(sb, [_p["id"]])   # 다시 안 뜨게
+                    # **바뀐 정체성을 다시 읽는다.**
+                    # 안 읽으면 화면이 옛 페르소나를 들고 있어서,
+                    # 승인한 제안이 그대로 남아 보인다.
+                    try:
+                        u.identity.reload()
+                    except Exception:
+                        pass
                     st.success("목적에 담았어요" + (f" — {_r.get('new','')}"
                                                   if _r.get("new") else ""))
                     st.rerun()
