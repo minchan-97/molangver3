@@ -63,6 +63,31 @@ def _last_rule(sb):
         return None
 
 
+ASK_PAIR_AGAIN_H = 72     # 답이 없어도 이만큼 지나면 다시 물을 수 있다
+
+
+def _asked_pair(sb, fid_a, fid_b) -> bool:
+    """이 짝을 최근에 이미 물어봤나."""
+    if not fid_a or not fid_b:
+        return False
+    try:
+        from datetime import datetime, timezone, timedelta
+        since = (datetime.now(timezone.utc)
+                 - timedelta(hours=ASK_PAIR_AGAIN_H)).isoformat()
+        rows = (sb.table("molang_outbox").select("payload")
+                .eq("rule", "conflict").gte("created_at", since)
+                .order("id", desc=True).limit(60).execute().data) or []
+        want = {int(fid_a), int(fid_b)}
+        for r in rows:
+            p = r.get("payload") or {}
+            got = {p.get("fact_id"), p.get("other_id")}
+            if None not in got and {int(x) for x in got if x} == want:
+                return True
+    except Exception:
+        pass
+    return False
+
+
 def collect_signals(sb, identity=None, registry=None, state=None) -> list[dict]:
     """지금 말을 걸 만한 계기들. 없으면 빈 목록."""
     out = []
@@ -109,6 +134,14 @@ def collect_signals(sb, identity=None, registry=None, state=None) -> list[dict]:
                             continue
                     except Exception:
                         pass
+                    # **이미 물어본 짝도 다시 묻지 않는다.**
+                    #
+                    # 답을 안 했다고 매번 다시 물으면 같은 질문이
+                    # 네다섯 번씩 간다 (실제로 한 질문이 여섯 번 갔고,
+                    # 보낸 질문의 17%가 반복이었다). 묻는 게 아니라
+                    # 조르는 것이다.
+                    if _asked_pair(sb, a.get("id"), b.get("id")):
+                        continue
                     out.append({
                         "rule": "conflict", "weight": 3,
                         "detail": f'"{ta[:40]}" 랑 "{(b.get("text") or "")[:40]}" '
