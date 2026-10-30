@@ -284,9 +284,22 @@ def chat(sb, pk: dict, place: str, who: str, ident, topic: str,
         _bd2.save(sb, _b2)
     except Exception:
         pass
+    # **들은 말은 바로 믿지 않는다.**
+    #
+    # 예전에는 핀코가 한 말이 곧장 사실이 됐다. 그래서
+    # "어부 핀코는 그게 뭔지 몰라" 같은 것이 앎으로 쌓였고,
+    # 지어낸 말도 그대로 들어왔다 (생일 건).
     try:
+        import hearsay as _hs
+        _j = _hs.judge(line, v["name"], knows)
+        if not _j.get("take"):
+            log(f"  ↩️ 안 담음 ({_j.get('why')}): {line[:30]}")
+            raise StopIteration
         ident._reinforce_or_add(f"{v['name']}는 {line[:60]}",
-                                source="village")
+                                source="village",
+                                speaker=v["name"])
+    except StopIteration:
+        pass
     except Exception:
         pass
     log(f"  🧑‍🌾 {v['name']}: {line[:46]}")
