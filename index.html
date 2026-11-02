@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>몰랑이네 동네</title>
+<style>
+  :root{
+    color-scheme: light;
+    --bg:#f6f3ee; --ink:#3a3430; --dim:#9a9088;
+    --card:#fffdfa; --line:#e6ded3;
+    --grass:#eef2e4; --water:#e4eef3; --dirt:#f3ece1;
+    --glow:#f7d9a8;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    box-sizing:border-box;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      color-scheme: dark;
+      --bg:#1b1917; --ink:#ebe4db; --dim:#8b8178;
+      --card:#24211e; --line:#332e29;
+      --grass:#232a21; --water:#1f272c; --dirt:#272320;
+      --glow:#5a4428;
+    }
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{
+    background:var(--bg); color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo",
+                "Noto Sans KR",sans-serif;
+    display:flex; flex-direction:column; align-items:center;
+    padding:14px 12px 24px;
+  }
+  header{width:100%;max-width:560px;margin-bottom:10px}
+  h1{font-size:1.05rem;margin:0 0 2px;font-weight:650;letter-spacing:-.01em}
+  .sub{font-size:.72rem;color:var(--dim)}
+
+  .map{
+    width:100%;max-width:560px;background:var(--card);
+    border:1px solid var(--line);border-radius:16px;padding:10px;
+    box-shadow:0 1px 3px rgba(0,0,0,.04);
+    overflow-x:auto;
+  }
+  .grid{display:grid;gap:1px;min-width:320px}
+  .cell{
+    aspect-ratio:1;border-radius:4px;background:var(--grass);
+    display:flex;align-items:center;justify-content:center;
+    font-size:min(3.4vw,15px);position:relative;
+    transition:background .25s;
+  }
+  .cell.empty{background:transparent}
+  .cell.land{background:var(--water)}
+  .cell.village{background:var(--dirt)}
+  .cell.spot{cursor:pointer}
+  .cell.spot:active{transform:scale(.92)}
+  .cell.here{box-shadow:0 0 0 2px var(--glow) inset;background:var(--glow)}
+  .who{
+    position:absolute;bottom:-2px;right:-1px;
+    font-size:min(2.6vw,11px);line-height:1;
+    text-shadow:0 0 3px var(--card),0 0 3px var(--card);
+  }
+
+  .legend{
+    width:100%;max-width:560px;margin-top:10px;
+    display:flex;flex-wrap:wrap;gap:6px 12px;
+    font-size:.72rem;color:var(--dim);
+  }
+  .legend b{color:var(--ink);font-weight:550}
+
+  .bar{
+    width:100%;max-width:560px;margin-top:12px;
+    display:flex;align-items:center;gap:10px;
+  }
+  button{
+    background:var(--card);color:var(--ink);
+    border:1px solid var(--line);border-radius:10px;
+    padding:7px 13px;font-size:.8rem;cursor:pointer;
+    font-family:inherit;
+  }
+  button:active{transform:scale(.96)}
+  input[type=range]{flex:1;accent-color:#c89b5e}
+  .time{font-size:.72rem;color:var(--dim);min-width:70px;text-align:right;
+        font-variant-numeric:tabular-nums}
+
+  .panel{
+    width:100%;max-width:560px;margin-top:12px;
+    background:var(--card);border:1px solid var(--line);
+    border-radius:14px;padding:12px 14px;font-size:.8rem;
+  }
+  .panel h2{font-size:.85rem;margin:0 0 6px;font-weight:600}
+  .panel .row{color:var(--dim);margin:3px 0}
+  .panel .row b{color:var(--ink);font-weight:550}
+  .hide{display:none}
+  footer{margin-top:16px;font-size:.68rem;color:var(--dim);text-align:center}
+</style>
+</head>
+<body>
+<header>
+  <h1>몰랑이네 동네</h1>
+  <div class="sub" id="sub">불러오는 중…</div>
+</header>
+
+<div class="map"><div class="grid" id="grid"></div></div>
+
+<div class="legend" id="legend"></div>
+
+<div class="bar">
+  <button id="play">▶ 하루 되감기</button>
+  <input type="range" id="seek" min="0" max="0" value="0">
+  <span class="time" id="time">지금</span>
+</div>
+
+<div class="panel hide" id="panel">
+  <h2 id="pname"></h2>
+  <div id="pbody"></div>
+</div>
+
+<footer>15분마다 한 걸음씩 움직입니다</footer>
+
+<script>
+const API = "/api/world";          // 같은 Vercel 배포의 함수
+let world = null, frames = [], idx = -1, timer = null;
+
+const EMO = {"몰랑이":"🐰","피우피우":"🐤","슈야":"🧁","토야":"🍫","미피":"🍼"};
+
+async function load(){
+  try{
+    const r = await fetch(API);
+    const d = await r.json();
+    world = d.view; frames = (d.replay && d.replay.frames) || [];
+    const seek = document.getElementById("seek");
+    seek.max = Math.max(0, frames.length - 1);
+    seek.value = seek.max;
+    idx = -1;                       // -1 이면 '지금'
+    draw(null);
+    document.getElementById("sub").textContent =
+      `${Object.keys(world.spots).length}곳 · 되감을 수 있는 장면 ${frames.length}개`;
+  }catch(e){
+    document.getElementById("sub").textContent = "불러오지 못했어요";
+  }
+}
+
+function whoAt(frame){
+  // frame 이 null 이면 '지금'
+  const out = {};
+  const src = frame ? frame.who : world.who;
+  for(const [n, v] of Object.entries(src || {})){
+    const spot = v.spot || v.at;
+    if(!spot) continue;
+    (out[spot] = out[spot] || []).push({name:n, room:v.room, feel:v.feel});
+  }
+  return out;
+}
+
+function draw(frame){
+  if(!world) return;
+  const [W,H] = world.size;
+  const g = document.getElementById("grid");
+  g.style.gridTemplateColumns = `repeat(${W},1fr)`;
+  const at = {};
+  for(const [name,s] of Object.entries(world.spots)) at[s.xy.join(",")] = [name,s];
+  const here = whoAt(frame);
+
+  g.innerHTML = "";
+  for(let y=0;y<H;y++) for(let x=0;x<W;x++){
+    const c = document.createElement("div");
+    const hit = at[`${x},${y}`];
+    if(!hit){ c.className = "cell empty"; g.appendChild(c); continue; }
+    const [name,s] = hit;
+    const people = here[name] || [];
+    c.className = `cell spot ${s.zone}` + (people.length ? " here" : "");
+    c.textContent = s.icon;
+    c.title = name;
+    if(people.length){
+      const w = document.createElement("span");
+      w.className = "who";
+      w.textContent = people.map(p => EMO[p.name] || "🐾").join("");
+      c.appendChild(w);
+    }
+    c.onclick = () => show(name, s, people);
+    g.appendChild(c);
+  }
+  legend();
+}
+
+function legend(){
+  const el = document.getElementById("legend");
+  const names = Object.keys(world.who || {});
+  el.innerHTML = names.map(n =>
+    `<span>${EMO[n]||"🐾"} <b>${n}</b></span>`).join("");
+}
+
+function show(name, s, people){
+  const p = document.getElementById("panel");
+  p.classList.remove("hide");
+  document.getElementById("pname").textContent = `${s.icon} ${name}`;
+  const rows = [];
+  if(people.length){
+    rows.push(`<div class="row">지금 여기: <b>${
+      people.map(x => `${EMO[x.name]||""}${x.name}${
+        x.room ? ` (${x.room})` : ""}`).join(", ")}</b></div>`);
+    for(const x of people) if(x.feel)
+      rows.push(`<div class="row">${x.name} — ${x.feel}</div>`);
+  } else {
+    rows.push(`<div class="row">아무도 없어요</div>`);
+  }
+  if(s.zone === "land" && s.dist)
+    rows.push(`<div class="row">집에서 <b>${s.dist}</b>만큼 멀어요</div>`);
+  if(world.pinko){
+    const pk = Object.entries(world.pinko).find(([k]) => k === name);
+    if(pk) rows.push(`<div class="row">🧑‍🌾 <b>${pk[1]}</b>가 여기 살아요</div>`);
+  }
+  // 몰랑이네는 안을 보여준다
+  if(name === "몰랑이네" && world.home)
+    rows.push(houseHTML());
+  document.getElementById("pbody").innerHTML = rows.join("");
+}
+
+function houseHTML(){
+  const h = world.home || {};
+  const coords = h.coords || {};
+  const objs = h.objects || {};
+  const where = h.where || {};
+  const inv = {};
+  for(const [k,v] of Object.entries(where))
+    inv[v] = (inv[v]||[]).concat(k === "molang" ? "🐰" : "🐤");
+  let xs = [], ys = [];
+  for(const [,xy] of Object.entries(coords)){ xs.push(xy[1]); ys.push(xy[0]); }
+  if(!xs.length) return "";
+  const W = Math.max(...xs)+1, H = Math.max(...ys)+1;
+  const cell = {};
+  for(const [room,xy] of Object.entries(coords)) cell[`${xy[0]},${xy[1]}`] = room;
+  let out = `<div class="row" style="margin-top:8px">집 안</div>`;
+  out += `<div style="display:grid;gap:3px;grid-template-columns:repeat(${W},1fr);
+           max-width:260px;margin-top:4px">`;
+  for(let y=0;y<H;y++) for(let x=0;x<W;x++){
+    const room = cell[`${y},${x}`];
+    if(!room){ out += `<div></div>`; continue; }
+    const who = (inv[room]||[]).join("");
+    const things = (objs[room]||[]).slice(0,2).join(", ");
+    out += `<div style="background:var(--dirt);border-radius:7px;padding:5px 3px;
+             text-align:center;font-size:.66rem;line-height:1.3">
+             <div style="font-weight:550">${room}</div>
+             ${who ? `<div style="font-size:.85rem">${who}</div>` : ""}
+             ${things ? `<div style="color:var(--dim);font-size:.6rem">${things}</div>` : ""}
+            </div>`;
+  }
+  out += `</div>`;
+  return out;
+}
+
+document.getElementById("seek").oninput = e => {
+  const i = +e.target.value;
+  idx = i;
+  draw(frames[i] || null);
+  const f = frames[i];
+  document.getElementById("time").textContent = f
+    ? new Date(f.at*1000).toLocaleTimeString("ko-KR",
+        {hour:"2-digit",minute:"2-digit"})
+    : "지금";
+};
+
+document.getElementById("play").onclick = () => {
+  const btn = document.getElementById("play");
+  if(timer){ clearInterval(timer); timer=null; btn.textContent="▶ 하루 되감기"; return; }
+  if(!frames.length) return;
+  btn.textContent = "⏸ 멈춤";
+  let i = 0;
+  timer = setInterval(() => {
+    const seek = document.getElementById("seek");
+    seek.value = i;
+    seek.dispatchEvent(new Event("input"));
+    if(++i >= frames.length){ clearInterval(timer); timer=null;
+      btn.textContent="▶ 하루 되감기"; }
+  }, 420);
+};
+
+load();
+setInterval(load, 5 * 60 * 1000);   // 5분마다 새로 읽는다
+</script>
+</body>
+</html>
