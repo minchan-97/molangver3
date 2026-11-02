@@ -216,6 +216,15 @@ def _stir(store, state, out) -> dict:
                                for n, v in _who.items()}
             except Exception:
                 pass
+
+            # **발자국.** 누가 어디 있었나를 한 줄씩.
+            # 마주침만으로는 재생이 안 된다 — 만난 순간에만 점이
+            # 찍히고 그 사이가 빈다. 하루 96줄이면 되돌려 볼 수 있다.
+            try:
+                import atlas as _at, home as _hm3
+                _at.step(store.sb, _who, _hm3.load(store.sb))
+            except Exception:
+                pass
             did.append('사회')
         except Exception as _se:
             out['society'] = {'error': str(_se)[:60]}
@@ -753,6 +762,12 @@ def main(mode):
                 out['map'] = _smap.rebuild(store.sb)
             except Exception as e:
                 out['map'] = {'error': str(e)[:120]}
+
+            try:    # 지도에 새로 생긴 자리를 붙인다 (이미 놓인 건 그대로)
+                import atlas as _atl
+                out['atlas'] = _atl.rebuild(store.sb)
+            except Exception:
+                pass
 
             try:    # 벡터로 그린 지도 — **나란히** 둔다 (덮어쓰지 않는다)
                 import semantic_map_v as _smv
