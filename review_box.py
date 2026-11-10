@@ -88,6 +88,11 @@ def approve(sb, identity, item) -> dict:
                         .eq("text", text).limit(1).execute().data) or []
                 if rows:
                     identity.approve(rows[0]["id"])
+                try:
+                    import internalize
+                    internalize.record(sb, text, "approve")
+                except Exception:
+                    pass
             identity.reload()
         else:
             res = sb.table("organism_observations").update(
@@ -109,6 +114,11 @@ def reject(sb, identity, item) -> dict:
                 {"resolved": "rejected"}).eq("id", item["id"]).execute()
             if not (getattr(res, "data", None) or []):
                 return {"ok": False, "error": f"격리 {item['id']}번을 못 찾았어요"}
+            try:
+                import internalize
+                internalize.record(sb, (item.get("title") or ""), "reject")
+            except Exception:
+                pass
             identity.reload()
         else:
             res = sb.table("organism_observations").update(
