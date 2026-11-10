@@ -1087,7 +1087,7 @@ with st.sidebar:
                         _r = _fn(sb, u.identity, _it)
                     except Exception as _e:
                         _r = {"ok": False, "error": str(_e)[:60]}
-                         if _r.get("ok"):
+                    if _r.get("ok"):
                         _ok += 1
                     else:
                         _fail += 1
@@ -1104,7 +1104,6 @@ with st.sidebar:
                     else:
                         st.success(f"{_ok}건을 한 번에 적용했어요")
                     st.rerun()
-
                 else:
                     st.caption("고른 것이 없어요")
 
