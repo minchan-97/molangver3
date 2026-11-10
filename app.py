@@ -1087,23 +1087,24 @@ with st.sidebar:
                         _r = _fn(sb, u.identity, _it)
                     except Exception as _e:
                         _r = {"ok": False, "error": str(_e)[:60]}
-                    if _r.get("ok"):
+                         if _r.get("ok"):
                         _ok += 1
                     else:
                         _fail += 1
                         if len(_why) < 3:
                             _why.append(_r.get("error") or "알 수 없음")
                 if _ok or _fail:
-                                        if _ok or _fail:
                     try:
                         import internalize; internalize.consolidate(sb, u.identity)
-                    except Exception: pass
+                    except Exception:
+                        pass
                     if _fail:
                         st.error(f"{_ok}건 적용 · {_fail}건 실패 — "
                                  + " / ".join(_why))
                     else:
                         st.success(f"{_ok}건을 한 번에 적용했어요")
                     st.rerun()
+
                 else:
                     st.caption("고른 것이 없어요")
 
