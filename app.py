@@ -378,7 +378,6 @@ with st.sidebar:
                          "new_finding": "🔎 이런 걸 찾았어",
                          "mood": "☁️ 요즘 이래", "grew": "🌱 생각이 자랐어",
                          "pending": "📥 확인할 게 있어",
-                         "unsure": "🤔 아직 모르겠는 게 있어",
                          "absence": "💗 오늘은 어땠어?"}
 
                 st.markdown("---")
@@ -1012,55 +1011,111 @@ with st.sidebar:
         if not _q:
             st.caption("지금은 없어요. 대화하거나 워커가 돌면 여기에 쌓여요.")
         else:
-            for _item in _q[:8]:
-                if _item["where"] == "error":       # 읽기 실패는 버튼 없이 알림만
-                    st.error(_item["title"])
-                    continue
-                c1, c2, c3 = st.columns([5, 1, 1])
-                _mark = "💬" if _item["where"] == "fact" else "🔎"
-                c1.caption(f"{_mark} {_item['title']}")
-                c1.caption(f"　{_item['reason']}")
-                if _item.get("url"):
-                    c1.caption(f"　{_item['url'][:50]}")
-                _k = f"{_item['where']}_{_item['id']}"
-                # 긴 대화 원문은 그대로 사실이 못 된다 → 사실만 뽑아서 넣는 길을 준다
-                if len(_item.get("title") or "") > 60 or _item.get("url"):
-                    if safe(c1.button, "✂️ 사실만 뽑기", key=f"ex_{_k}"):
-                        with st.spinner("뽑는 중…"):
-                            st.session_state[f"ex_res_{_k}"] = review_box.extract_facts(
-                                _item.get("full") or _item.get("title") or "",
-                                st.session_state.api_key)
-                _ex = st.session_state.get(f"ex_res_{_k}")
-                if _ex:
-                    if _ex.get("error"):
-                        c1.caption(f"뽑기 실패: {_ex['error'][:50]}")
-                    elif not (_ex["user"] or _ex["molang"]):
-                        c1.caption("남길 만한 사실이 없어요")
-                    else:
-                        for _t in _ex["user"]:
-                            c1.caption(f"　👤 {_t}")
-                        for _t in _ex["molang"]:
-                            c1.caption(f"　🐰 {_t}")
-                        if safe(c1.button, "이대로 넣기", key=f"exok_{_k}"):
-                            _r = review_box.save_extracted(
-                                sb, u.identity, _item, _ex["user"], _ex["molang"])
-                            if _r.get("ok"):
-                                st.session_state.pop(f"ex_res_{_k}", None)
-                                st.rerun()
-                            else:
-                                st.error(_r.get("error"))
-                if safe(c2.button, "○", key=f"ok_{_k}", help="맞아요 / 쓸 만해요"):
-                    _r = review_box.approve(sb, u.identity, _item)
+            _items = [i for i in _q[:12] if i.get("where") != "error"]
+            for _e in [i for i in _q if i.get("where") == "error"]:
+                st.error(_e["title"])          # 읽기 실패는 버튼 없이 알림만
+
+            # 긴 원문은 그대로 사실이 못 된다 → 사실만 뽑아서 넣는 길.
+            # 폼 안에는 일반 버튼을 못 넣으므로 **폼 위**에 따로 둔다.
+            _long = [i for i in _items
+                     if len(i.get("title") or "") > 60 or i.get("url")]
+            if _long:
+                with st.expander(f"✂️ 긴 것에서 사실만 뽑기 ({len(_long)}건)"):
+                    for _item in _long:
+                        _k = f"{_item['where']}_{_item['id']}"
+                        st.caption(f"　{(_item.get('title') or '')[:60]}")
+                        if safe(st.button, "뽑기", key=uk(f"ex_{_k}")):
+                            with st.spinner("뽑는 중…"):
+                                st.session_state[f"ex_res_{_k}"] = \
+                                    review_box.extract_facts(
+                                        _item.get("full") or _item.get("title") or "",
+                                        st.session_state.api_key)
+                        _ex = st.session_state.get(f"ex_res_{_k}")
+                        if not _ex:
+                            continue
+                        if _ex.get("error"):
+                            st.caption(f"　뽑기 실패: {_ex['error'][:50]}")
+                        elif not (_ex["user"] or _ex["molang"]):
+                            st.caption("　남길 만한 사실이 없어요")
+                        else:
+                            for _t in _ex["user"]:
+                                st.caption(f"　👤 {_t}")
+                            for _t in _ex["molang"]:
+                                st.caption(f"　🐰 {_t}")
+                            if safe(st.button, "이대로 넣기", key=uk(f"exok_{_k}")):
+                                _r = review_box.save_extracted(
+                                    sb, u.identity, _item,
+                                    _ex["user"], _ex["molang"])
+                                if _r.get("ok"):
+                                    st.session_state.pop(f"ex_res_{_k}", None)
+                                    st.rerun()
+                                else:
+                                    st.error(_r.get("error"))
+
+            # **폼 안에서는 체크를 눌러도 다시 그리지 않는다.**
+            #
+            # 예전에는 ○/× 가 버튼이라, 누를 때마다 DB 를 쓰고
+            # st.rerun() 이 돌았다. 열 건을 치우려면 열 번을 기다려야
+            # 했다. 검토함이 밀릴수록 치우기가 더 힘들어지는 꼴이었다.
+            with st.form(key=uk("review_form")):
+                st.caption("　○ 맞아요 · × 아니에요 — 다 고르고 아래 버튼을 누르세요")
+                _marks = {}
+                for _item in _items:
+                    _k = f"{_item['where']}_{_item['id']}"
+                    _mark = "💬" if _item["where"] == "fact" else "🔎"
+                    st.caption(f"{_mark} {_item['title']}")
+                    st.caption(f"　{_item['reason']}")
+                    if _item.get("url"):
+                        st.caption(f"　{_item['url'][:50]}")
+                    _c1, _c2, _c3 = st.columns([1, 1, 5])
+                    _marks[_k] = (_c1.checkbox("○", key=uk(f"fok_{_k}")),
+                                  _c2.checkbox("×", key=uk(f"fno_{_k}")))
+                _go = st.form_submit_button("한 번에 적용", type="primary")
+
+            if _go:
+                _by = {f"{i['where']}_{i['id']}": i for i in _items}
+                _ok = _fail = 0
+                _why = []
+                for _k, (_yes, _no) in _marks.items():
+                    if _yes == _no:          # 둘 다거나 둘 다 아니면 넘긴다
+                        continue
+                    _it = _by.get(_k)
+                    if not _it:
+                        continue
+                    _fn = review_box.approve if _yes else review_box.reject
+                    try:
+                        _r = _fn(sb, u.identity, _it)
+                    except Exception as _e:
+                        _r = {"ok": False, "error": str(_e)[:60]}
                     if _r.get("ok"):
-                        st.rerun()
-                    else:                       # 조용히 실패하면 왜 안 되는지 모른다
-                        st.error(f"승인 실패: {_r.get('error')}")
-                if safe(c3.button, "×", key=f"no_{_k}", help="아니에요"):
-                    _r = review_box.reject(sb, u.identity, _item)
-                    if _r.get("ok"):
-                        st.rerun()
+                        _ok += 1
                     else:
-                        st.error(f"거절 실패: {_r.get('error')}")
+                        _fail += 1
+                        if len(_why) < 3:
+                            _why.append(_r.get("error") or "알 수 없음")
+                if _ok or _fail:
+                    if _fail:
+                        st.error(f"{_ok}건 적용 · {_fail}건 실패 — "
+                                 + " / ".join(_why))
+                    else:
+                        st.success(f"{_ok}건을 한 번에 적용했어요")
+                    st.rerun()
+                else:
+                    st.caption("고른 것이 없어요")
+
+            # 많이 밀렸을 때 — 격리된 것은 대개 조각이나 메아리다
+            if len(_items) >= 5:
+                if safe(st.button, f"보이는 {len(_items)}건 모두 ×",
+                        key=uk("sweep_all")):
+                    _n = 0
+                    for _it in _items:
+                        try:
+                            if review_box.reject(sb, u.identity, _it).get("ok"):
+                                _n += 1
+                        except Exception:
+                            pass
+                    st.success(f"{_n}건을 치웠어요")
+                    st.rerun()
 
         st.markdown("---")
     st.caption("처음이면: 몰랑이 사진 → 외형학습 → 표정생성")
