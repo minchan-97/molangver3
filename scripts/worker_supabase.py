@@ -733,6 +733,15 @@ def main(mode):
         except Exception as e:
             out['purpose'] = {'error': str(e)[:150]}
 
+        # 승인/거절이 반복돼 쌓였으면 '판단 축'으로 굳힌다 (내면화)
+        try:
+            import internalize
+            from molang_store import SupabaseIdentity as _SI
+            _id = _SI(store.sb)
+            out['axis'] = internalize.consolidate(store.sb, _id)
+        except Exception as e:
+            out['axis'] = {'error': str(e)[:120]}
+
         # 먼저 말 걸기 — 계기가 있을 때만 (없으면 아무 말도 안 한다)
         try:
             import outbox
