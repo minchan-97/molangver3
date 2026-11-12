@@ -813,7 +813,7 @@ with st.sidebar:
                 _lv = _ld.get("visits") or {}
                 _icon = {"바다": "🌊", "산": "⛰️", "숲": "🌲",
                          "마을": "🏘️", "들판": "🌾", "물가": "💧"}
-                st.markdown("#### 🧭 바깥")
+                st.markdown("#### 🧭 다녀온 곳")
                 for _p in sorted(_places, key=lambda x: x["dist"]):
                     _n = _lv.get(_p["kind"], 0)
                     _bar = "─" * int(min(10, _p["dist"]))
@@ -823,6 +823,28 @@ with st.sidebar:
                         + (f"{_n}번 다녀옴" if _n else "아직 못 가봄")
                         + (f" · {', '.join(_p.get('from', [])[:2])}에서 생김"
                            if _p.get("from") else ""))
+
+                # **마을 자리도 다녀온다.** 그런데 여기는 land 의 자연만
+                # 보여줘서, 빵집에 세 번 갔어도 화면에는 안 보였다.
+                # "한 번도 건물에 간 적이 없다" 로 읽힌 까닭이다.
+                try:
+                    import village as _vg2
+                    _vp = (_vg2.load(sb).get("places") or {})
+                    _vn = {k: _lv.get(k, 0) for k in _vp
+                           if not k.endswith("네")}
+                    _been = {k: v for k, v in _vn.items() if v}
+                    if _vn:
+                        st.markdown("#### 🏘️ 마을 자리")
+                        for _k, _v in sorted(_vn.items(),
+                                             key=lambda kv: -kv[1]):
+                            st.caption(
+                                f"　{_EMO.get(_k, '📍') if '_EMO' in dir() else '📍'}"
+                                f" **{_k}** · "
+                                + (f"{_v}번 다녀옴" if _v else "아직 못 가봄"))
+                        if not _been:
+                            st.caption("　아직 마을에는 한 번도 안 갔어요")
+                except Exception:
+                    pass
 
             _log = (_h.get("log") or [])[-6:][::-1]
             _llog = (_ld.get("log") or [])[-4:][::-1]
