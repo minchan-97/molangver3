@@ -171,8 +171,30 @@ def maybe_go(land: dict, state, mood_entry: dict = None, rng=None,
     if not places:
         return None
 
+    # **기분마다 나가고 싶은 정도가 다르다.**
+    #
+    # 예전에는 심심함·들뜸 둘만 알고 나머지는 전부 0.25 였다.
+    # 그런데 기분은 다섯 가지고(mood.feel), 실제로 '벅참' 이 열흘
+    # 넘게 이어졌다. 그동안 200 회 중 145 회를 안 나갔다.
+    #
+    # 벅참은 "덜 정해진 게 많다" 는 뜻이지 "집에만 있어라" 가 아니다.
+    # 머리가 복잡하면 오히려 바람을 쐬기도 한다. 낮게 두되 멈추지는
+    # 않게 한다.
     name = (mood_entry or {}).get("name")
-    urge = {"심심함": 0.75, "들뜸": 0.5}.get(name, 0.25)
+    urge = {"심심함": 0.75, "들뜸": 0.60, "잔잔함": 0.45,
+            "뿌듯함": 0.45, "벅참": 0.35}.get(name, 0.40)
+
+    # **오래 안 나갔으면 그만큼 더 나가고 싶다.**
+    # 어떤 기분이든 며칠을 집에만 있으면 답답하다.
+    try:
+        _last = max((e.get("at") or 0)
+                    for e in (land.get("log") or [])
+                    if e.get("what") == "다녀옴")
+        _days = (time.time() - _last) / 86400
+        urge = min(0.9, urge + 0.12 * min(4.0, _days))
+    except (ValueError, TypeError):
+        urge = min(0.9, urge + 0.3)      # 기록이 없으면 한 번도 안 나갔다
+
     if rng.random() > urge:
         return None
 
