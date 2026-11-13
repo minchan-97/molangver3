@@ -362,13 +362,19 @@ with st.sidebar:
                 _gplan = st.session_state.get("_gen_plan")
                 if _gplan is not None:
                     if not _gplan:
-                        # 바꿀 것이 없었다 — 그 사실도 남겨야 다음에
-                        # 또 후보로 올라오지 않는다 (run 이 저장한다)
-                        _gt.run(sb, u.registry, client, picked=[],
-                                log=lambda *a: None)
+                        # **못 한 것과 안 해도 되는 것을 가른다.**
+                        # 조용히 "바꿀 것이 없었다" 로만 보이면,
+                        # 부르다 실패한 것을 영영 모른다.
+                        _err = getattr(_gt.propose, "last_error", None)
+                        if _err:
+                            st.error("다듬지 못했어요 — " + "; ".join(_err))
+                            st.caption("　다시 눌러보세요")
+                        else:
+                            _gt.run(sb, u.registry, client, picked=[],
+                                    log=lambda *a: None)
+                            st.caption("　바꿀 것이 없었어요 "
+                                       "(이미 주제에서 떨어져 있어요)")
                         st.session_state.pop("_gen_plan", None)
-                        st.caption("　바꿀 것이 없었어요 "
-                                   "(이미 주제에서 떨어져 있어요)")
                     else:
                         st.caption(f"　바뀐 것 {len(_gplan)}개 — "
                                    "둘 수 있는 것만 고르세요")
