@@ -1041,6 +1041,17 @@ with st.sidebar:
                 pass
             if st.session_state.get("_path_note"):
                 st.caption("🧭 " + st.session_state["_path_note"])
+                _pd2 = st.session_state.get("_path_detail") or {}
+                if _pd2:
+                    with st.expander("무엇과 견줬나"):
+                        st.caption(f"유형: {_pd2.get('type')}")
+                        for _s in _pd2.get("steps") or []:
+                            st.caption(f"　단계: {_s.get('text','')}")
+                            st.caption(f"　　닿은 말: "
+                                       + (", ".join(_s.get("touched") or [])
+                                          or "없음"))
+                        st.caption("　답의 낱말: "
+                                   + ", ".join(_pd2.get("words") or []))
             if st.session_state.get("_tree_save_error"):
                 st.error(f"트리 저장 실패: {st.session_state['_tree_save_error'][:80]}")
         except Exception:
@@ -1703,8 +1714,15 @@ if msg or photo:
                 if _pr.get("score") is not None and _pr["score"] < 0.34:
                     st.session_state["_path_note"] = (
                         f"답이 걸은 길과 거의 안 닿았어요 ({_pr['score']})")
+                    # **무엇과 견줬는지 들고 있는다.**
+                    # 점수만 보면 왜 0 인지 알 수가 없다.
+                    st.session_state["_path_detail"] = {
+                        "type": result.get("type"),
+                        "steps": _pr.get("detail") or [],
+                        "words": _pr.get("answer_words") or []}
                 else:
                     st.session_state.pop("_path_note", None)
+                    st.session_state.pop("_path_detail", None)
         except Exception:
             pass
         u.last_talk_ts = _time.time()   # 시간 동기화용
