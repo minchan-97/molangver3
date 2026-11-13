@@ -71,13 +71,21 @@ def _step_texts(tree, path: list) -> list:
         if node is None:
             out.append(str(key))
             continue
-        # 판에 따라 모양이 다르다 — 있는 대로 긁는다
-        bits = [str(key)]
-        for attr in ("name", "label", "prompt", "instruction", "desc", "text"):
-            v = getattr(node, attr, None) or (
-                node.get(attr) if isinstance(node, dict) else None)
+        # JudgmentNode 는 prompt(판단의 이름)와 **directive**(실제
+        # 강제되는 지시)를 가진다. 전에는 directive 를 안 읽어서,
+        # 영어 id 만 남아 한국어 답과 영영 안 닿았다 (3건 전부 0.00).
+        # 실제로 답을 통제하는 것은 directive 쪽이다.
+        bits = []
+        for attr in ("prompt", "directive", "name", "label",
+                     "instruction", "desc", "text"):
+            v = getattr(node, attr, None)
+            if v is None and isinstance(node, dict):
+                v = node.get(attr)
             if v:
                 bits.append(str(v))
+        # 한글이 하나도 없으면 id 라도 넣는다 (영어 유형)
+        if not bits:
+            bits = [str(key)]
         out.append(" ".join(bits))
     return out
 
