@@ -1029,31 +1029,31 @@ with st.sidebar:
             _used = sum((u.registry.usage_count or {}).values())
             st.caption(f"🌳 사고 기억 {_tmem}개 · 늘린 판단 단계 {_grown}개 · "
                        f"트리 사용 {_used}회")
-            # **꺼낸 근거가 얼마나 쓰이는가.**
-            # 경로 추적률 1.0 은 '경로가 남았나' 일 뿐이다.
-            # 이것은 '꺼낸 기억을 보고 말했나' 다. 다른 질문이다.
+            # **이번엔 무엇을 꺼내 봤나.** 세지 않고 있는 그대로.
             try:
-                import pathcheck as _pc2
-                _ps = _pc2.summary(sb)
-                if _ps.get("n"):
-                    st.caption("　" + _pc2.describe(_ps))
+                import evidence_log as _ev2
+                _e = st.session_state.get("_evidence")
+                if _e:
+                    if _e.get("n"):
+                        with st.expander(
+                                f"📎 방금 꺼내 본 근거 {_e['n']}개"):
+                            st.caption(f"유형: {_e.get('type')}")
+                            if _e.get("path"):
+                                st.caption("길: " + " → ".join(
+                                    str(x) for x in _e["path"]))
+                            for _s in _e.get("sources") or []:
+                                st.caption(f"　· {_s[:80]}")
+                    else:
+                        st.caption("📎 방금은 꺼낼 근거가 없었어요")
+                _rows = _ev2.recent(sb, 20)
+                if _rows:
+                    st.caption("　" + _ev2.describe(_rows))
             except Exception:
                 pass
-            if st.session_state.get("_path_note"):
-                st.caption("🧭 " + st.session_state["_path_note"])
-                _pd2 = st.session_state.get("_path_detail") or {}
-                if _pd2:
-                    with st.expander("무엇과 견줬나"):
-                        st.caption(f"유형: {_pd2.get('type')}")
-                        for _s in _pd2.get("steps") or []:
-                            st.caption(f"　근거: {_s.get('source','')}")
-                            st.caption(f"　　닿은 말: "
-                                       + (", ".join(_s.get("touched") or [])
-                                          or "없음"))
-                        st.caption("　답의 낱말: "
-                                   + ", ".join(_pd2.get("words") or []))
+
             if st.session_state.get("_tree_save_error"):
-                st.error(f"트리 저장 실패: {st.session_state['_tree_save_error'][:80]}")
+                st.error("트리 저장 실패: "
+                         + st.session_state["_tree_save_error"][:80])
         except Exception:
             pass
 
@@ -1702,31 +1702,22 @@ if msg or photo:
                              answer=answer)
         except Exception:
             pass
-        # **꺼낸 근거가 답에 쓰였나.**
+        # **이번엔 무엇을 꺼내 봤나.** 점수는 안 매긴다.
         #
-        # 기억을 꺼내 놓고 딴 데서 답했다면, 근거를 댔다고 할 수 없다.
-        # (처음엔 단계의 지시문과 답이 닿는지 쟀는데, 지시문은 절차를
-        #  답은 내용을 말해서 낱말이 겹칠 이유가 없었다. 글자로는
-        #  '절차를 따랐는가' 를 못 잰다.)
-        # 고치지는 않는다 — 재서 남기는 자리다.
+        # 대놓고 정보를 묻지 않으면 근거가 아예 안 딸려 오고,
+        # 와도 답과 글자가 겹칠 이유가 없다. 그걸 0 으로 세면
+        # 없는 결함을 있다고 말하는 셈이다.
+        # (앞서 단계 지시문으로 쟀을 때도 같은 일을 겪었다 —
+        #  지시문을 다듬자 점수가 0.26 에서 0.00 으로 떨어졌는데,
+        #  그건 개선을 손해로 읽은 것이었다.)
         try:
             if result:
-                import pathcheck as _pc
-                _pr = _pc.record(sb, result, answer)
-                if _pr.get("score") is not None and _pr["score"] < 0.34:
-                    st.session_state["_path_note"] = (
-                        f"꺼낸 근거가 답에 거의 안 보여요 ({_pr['score']})")
-                    # **무엇과 견줬는지 들고 있는다.**
-                    # 점수만 보면 왜 0 인지 알 수가 없다.
-                    st.session_state["_path_detail"] = {
-                        "type": result.get("type"),
-                        "steps": _pr.get("detail") or [],
-                        "words": _pr.get("answer_words") or []}
-                else:
-                    st.session_state.pop("_path_note", None)
-                    st.session_state.pop("_path_detail", None)
+                import evidence_log as _ev
+                st.session_state["_evidence"] = _ev.record(
+                    sb, result, answer)
         except Exception:
             pass
+
         u.last_talk_ts = _time.time()   # 시간 동기화용
         try:                     # 대화로 바뀐 판단 구조를 서버에 남긴다
             import registry_store
