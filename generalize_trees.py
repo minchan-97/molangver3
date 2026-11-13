@@ -124,6 +124,9 @@ def plan(registry, only_used: bool = True, top_types: int = 0) -> list:
             d = getattr(node, "directive", "") or ""
             if not d or not _mostly_korean(d):
                 continue
+            # 이미 보고 "괜찮다" 한 것, 또는 고친 것은 건너뛴다
+            if getattr(node, "_directive_ok", None) == d:
+                continue
             # 규칙으로는 **후보만** 넓게 잡는다. 정말 소재가 박혔는지는
             # rewrite 에서 가린다 (규칙으로 명사와 동사꼴을 가르는 데
             # 한계가 뚜렷했다).
@@ -137,7 +140,7 @@ def plan(registry, only_used: bool = True, top_types: int = 0) -> list:
 
 
 def rewrite(client, rows: list, model: str = "gpt-4o-mini",
-            batch: int = 8, log=print) -> list:
+            batch: int = 3, log=print) -> list:
     """
     한 번에 여러 개씩 다듬는다. **바꿀 것이 없으면 안 바꾼다.**
 
@@ -149,12 +152,13 @@ def rewrite(client, rows: list, model: str = "gpt-4o-mini",
     바꿀 필요가 없으면 LLM 이 원문을 그대로 돌려주고, 그러면
     apply 가 건너뛴다.
     """
-    done = []
+    done, ok, fail = [], [], []
     for i in range(0, len(rows), batch):
         chunk = rows[i:i + batch]
         try:
             r = client.chat.completions.create(
                 model=model, temperature=0.0, max_tokens=700,
+                response_format={"type": "json_object"},
                 messages=[{"role": "user", "content":
                            "아래는 사고 절차의 단계별 지시문입니다. 이 절차들은 "
                            "**여러 주제에 다시 쓰입니다.**\n\n"
@@ -171,20 +175,68 @@ def rewrite(client, rows: list, model: str = "gpt-4o-mini",
                            "지시문:\n"
                            + "\n".join(f"{n+1}. {c['directive']}"
                                        for n, c in enumerate(chunk))
-                           + "\n\nJSON 배열만 출력 (같은 개수, 순서 그대로): "
-                             "[\"지시문1\", ...]"}])
+                           + "\n\n아래 꼴의 JSON 만 출력하세요. "
+                             "개수와 순서를 그대로 지키세요.\n"
+                             '{"steps": ["지시문1", "지시문2", ...]}'}])
             t = r.choices[0].message.content.strip()
             t = t.replace("```json", "").replace("```", "").strip()
             fixed = json.loads(t)
-            if not (isinstance(fixed, list) and len(fixed) == len(chunk)):
+            # {"steps": [...]} 로 받는다. 배열만 와도 받아준다.
+            if isinstance(fixed, dict):
+                fixed = (fixed.get("steps") or fixed.get("directives")
+                         or next((v for v in fixed.values()
+                                  if isinstance(v, list)), None))
+            if not isinstance(fixed, list):
+                fail.append(f"배열이 아님: {t[:40]}")
                 continue
+            if len(fixed) != len(chunk):
+                # 개수가 어긋나면 짝을 못 맞춘다. 적게 온 만큼만 쓴다.
+                fail.append(f"개수 어긋남 {len(fixed)}≠{len(chunk)}")
+                if len(fixed) < len(chunk):
+                    chunk = chunk[:len(fixed)]
+                else:
+                    fixed = fixed[:len(chunk)]
             for c, nb in zip(chunk, fixed):
-                if isinstance(nb, str) and nb.strip() and nb.strip() != c["directive"]:
-                    done.append({**c, "new": nb.strip()})
+                if not (isinstance(nb, str) and nb.strip()):
+                    continue
+                nb = nb.strip()
+                if nb != c["directive"]:
+                    done.append({**c, "new": nb})
+                else:
+                    # **이미 괜찮다고 판단된 것도 기록한다.**
+                    # 안 남기면 규칙이 다음에 또 후보로 잡아서,
+                    # 고쳐도 고쳐도 목록이 안 줄어든다.
+                    ok.append(c)
         except Exception as e:
+            fail.append(f"{type(e).__name__}: {str(e)[:60]}")
             if log:
-                log(f"  다듬기 실패: {str(e)[:50]}")
-    return done
+                log(f"  다듬기 실패: {str(e)[:60]}")
+    # **왜 못 했는지 들고 나온다.** 조용히 빈손으로 돌아오면
+    # "바꿀 것이 없었다" 와 "부르다 실패했다" 를 구분할 수 없다.
+    return done, ok, fail
+
+
+def mark_ok(registry, rows: list) -> int:
+    """
+    **이미 주제에서 떨어져 있다**고 표시한다.
+
+    규칙은 후보를 넓게 잡는다(86개). 그런데 실제로 바뀌는 것은
+    열 개쯤이고, 나머지는 LLM 이 "이대로 괜찮다" 고 돌려보낸다.
+    그 사실을 안 남기면 다음에 또 후보로 잡혀서, 고쳐도 목록이
+    줄지 않는다.
+    """
+    n = 0
+    for r in rows or []:
+        tree = (getattr(registry, "trees", {}) or {}).get(r["tree"])
+        node = (getattr(tree, "nodes", {}) or {}).get(r["node"]) if tree else None
+        if node is None:
+            continue
+        try:
+            setattr(node, "_directive_ok", r["directive"])
+            n += 1
+        except Exception:
+            pass
+    return n
 
 
 def apply(registry, done: list, log=print) -> int:
@@ -203,6 +255,8 @@ def apply(registry, done: list, log=print) -> int:
             if not hasattr(node, "_directive_was"):
                 setattr(node, "_directive_was", node.directive)
             node.directive = d["new"]
+            # 고친 것도 다시 후보가 되지 않게
+            setattr(node, "_directive_ok", d["new"])
             n += 1
         except Exception:
             pass
@@ -221,7 +275,16 @@ def propose(registry, client, top_types: int = 5, log=print) -> list:
     rows = plan(registry, top_types=top_types)
     if not rows:
         return []
-    return rewrite(client, rows, log=log)
+    done, ok, fail = rewrite(client, rows, log=log)
+    # 괜찮다고 판단된 것은 **그 자리에서 표시**해 둔다.
+    # 사람이 고를 일이 없고, 다시 후보로 올라오면 안 된다.
+    mark_ok(registry, ok)
+    if fail:
+        # 실패한 것은 표시하지 않는다 — 다시 해봐야 한다
+        propose.last_error = fail[:3]
+    else:
+        propose.last_error = []
+    return done
 
 
 def run(sb, registry, client, picked: list = None,
@@ -232,13 +295,17 @@ def run(sb, registry, client, picked: list = None,
     """
     done = picked if picked is not None else propose(
         registry, client, top_types=top_types, log=log)
+    n = apply(registry, done or [], log=log)
+
+    # **아무것도 안 고쳤어도 저장한다.**
+    # propose 가 "이미 괜찮다" 로 표시해 둔 것들이 있다. 그걸 안
+    # 남기면 다음에 또 후보로 올라와서, 눌러도 목록이 안 줄어든다.
+    try:
+        import registry_store
+        registry_store.save(sb, registry)
+    except Exception:
+        pass
+
     if not done:
-        return {"skip": "바꿀 것이 없다"}
-    n = apply(registry, done, log=log)
-    if n:
-        try:
-            import registry_store
-            registry_store.save(sb, registry)
-        except Exception:
-            pass
+        return {"rewrote": 0, "skip": "바꿀 것이 없다", "at": time.time()}
     return {"rewrote": n, "at": time.time()}
