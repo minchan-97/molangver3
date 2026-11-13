@@ -95,9 +95,17 @@ def plan(registry, only_used: bool = True, top_types: int = 0) -> list:
     """
     무엇을 고칠지. 바꾸기 전에 눈으로 볼 수 있게.
 
-    **영어 지시문은 건드리지 않는다.** logic_db 에서 온 기본 20종이
-    그런데, 실제로 걸은 경로가 508건 중 1건뿐이다. 손볼 값어치가
-    없고, 괜히 바꾸면 원래 뜻만 흐려진다.
+    두 가지를 고른다.
+
+      소재가 박힌 것   "음악과 출근 상황에서 느끼는 감정을 분석한다"
+      **영어로 된 것**  "hypothetical syllogism 형식으로 추론해 결론을 낸다"
+
+    영어 지시문은 한국어 답과 **영영 안 닿는다.** 처음에는 "영어
+    유형은 거의 안 쓰인다" 고 보고 건너뛰었는데, 그것은 **유형
+    전체가 영어인 경우만** 센 것이었다. 실제로는 한국어 유형 안에
+    영어 지시문이 섞여 있고, 그 유형들의 경로가 73건이다.
+    conditional_chain(46건)이 그 예이고, 그 경로의 점수는 전부
+    0.00 이었다.
 
     only_used=True 면 **실제로 걸어본 유형만** 본다. 안 쓰는 것을
     고치는 데 LLM 을 쓸 이유가 없다.
@@ -122,20 +130,33 @@ def plan(registry, only_used: bool = True, top_types: int = 0) -> list:
             continue
         for nid, node in (getattr(tree, "nodes", {}) or {}).items():
             d = getattr(node, "directive", "") or ""
-            if not d or not _mostly_korean(d):
+            if not d:
                 continue
             # 이미 보고 "괜찮다" 한 것, 또는 고친 것은 건너뛴다
             if getattr(node, "_directive_ok", None) == d:
                 continue
+
+            # ① 영어로 된 지시문 — 한국어 답과 영영 안 닿는다
+            if not _mostly_korean(d):
+                out.append({"tree": tid, "node": nid, "walked": walked,
+                            "directive": d, "specific": ["영어"],
+                            "why": "영어"})
+                continue
+
+            # ② 소재가 박힌 것.
             # 규칙으로는 **후보만** 넓게 잡는다. 정말 소재가 박혔는지는
             # rewrite 에서 가린다 (규칙으로 명사와 동사꼴을 가르는 데
             # 한계가 뚜렷했다).
             hits = looks_specific(d)
             if len(hits) >= 2:
                 out.append({"tree": tid, "node": nid, "walked": walked,
-                            "directive": d, "specific": hits})
-    # 많이 걸은 유형이 먼저 — 고칠 값어치가 큰 쪽이다
-    out.sort(key=lambda r: (-r["walked"], -len(r["specific"])))
+                            "directive": d, "specific": hits,
+                            "why": "소재"})
+    # **영어가 먼저.** 그건 한국어 답과 영영 안 닿아서 점수가
+    # 반드시 0 이 된다. 소재가 박힌 것보다 확실한 손해다.
+    # 그다음은 많이 걸은 유형 순이다.
+    out.sort(key=lambda r: (r.get("why") != "영어", -r["walked"],
+                            -len(r["specific"])))
     return out
 
 
@@ -162,9 +183,15 @@ def rewrite(client, rows: list, model: str = "gpt-4o-mini",
                 messages=[{"role": "user", "content":
                            "아래는 사고 절차의 단계별 지시문입니다. 이 절차들은 "
                            "**여러 주제에 다시 쓰입니다.**\n\n"
-                           "지시문에 **특정 소재**(고유명사, 그때 그 대화에만 "
-                           "해당하는 것)가 들어 있으면, 어떤 주제에도 맞는 말로 "
-                           "바꾸세요. **단계의 뜻과 순서는 그대로 두세요.**\n\n"
+                           "두 가지를 고쳐야 합니다. **단계의 뜻과 순서는 "
+                           "그대로 두세요.**\n"
+                           "  ① **영어로 쓰인 것은 한국어로** 옮기세요. "
+                           "이 절차는 한국어로 답하는 데 쓰입니다.\n"
+                           "  ② **특정 소재**(고유명사, 그때 그 대화에만 "
+                           "해당하는 것)는 어떤 주제에도 맞는 말로 바꾸세요.\n\n"
+                           "영어 예\n"
+                           "  hypothetical syllogism 형식으로 추론해 결론을 낸다\n"
+                           "  → 만약 A면 B, B면 C 라는 식으로 이어 붙여 결론을 낸다\n\n"
                            "바꿔야 하는 예\n"
                            "  음악과 출근 상황에서 느끼는 감정을 분석한다\n"
                            "  → 상대가 말한 상황에서 어떤 감정이 걸리는지 짚는다\n\n"
