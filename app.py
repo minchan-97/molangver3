@@ -342,21 +342,26 @@ with st.sidebar:
         # 경로의 81% 다. 거기만 봐도 효과의 대부분을 가져간다.
         try:
             import generalize_trees as _gt
-            _gcand = _gt.plan(u.registry, top_types=3)
+            # 영어 지시문은 유형이 작아도 반드시 걸러야 한다
+            # (conditional_chain 46건이 전부 0.00 이었다).
+            _gcand = _gt.plan(u.registry, top_types=8)
             if len(_gcand) >= 3:
                 st.markdown("---")
                 _gtypes = {}
                 for _r in _gcand:
                     _gtypes[_r["tree"]] = _r["walked"]
-                st.caption("🌳 소재가 박힌 듯한 지시문 "
-                           f"{len(_gcand)}개 · "
+                _geng = sum(1 for _r in _gcand if _r.get("why") == "영어")
+                st.caption(f"🌳 손봐야 할 지시문 {len(_gcand)}개"
+                           + (f" (영어 {_geng}개 — 한국어 답과 "
+                              "영영 안 닿아요)" if _geng else "")
+                           + " · "
                            + ", ".join(f"{k}({v}건)"
                                        for k, v in list(_gtypes.items())[:3]))
 
                 if safe(st.button, "다듬어 보기", key=uk("gen_try")):
                     with st.spinner("다듬는 중…"):
                         st.session_state["_gen_plan"] = _gt.propose(
-                            u.registry, client, top_types=3,
+                            u.registry, client, top_types=8,
                             log=lambda *a: None)
 
                 _gplan = st.session_state.get("_gen_plan")
