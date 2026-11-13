@@ -330,6 +330,36 @@ with st.sidebar:
         except Exception:
             pass
 
+        # 🌳 지시문에서 그때 그 소재 걷어내기
+        #
+        # 유형은 한 번 만들어 여러 번 다시 쓰인다. 그런데 만들 때
+        # 그 대화의 질문을 보여주니 "음악과 출근 상황에서…" 처럼
+        # 소재가 박혀 나왔다. 다음에 다른 주제로 쓰면 지시문은 옛
+        # 주제를, 답은 새 주제를 말한다 — 둘이 안 닿는다.
+        try:
+            import generalize_trees as _gt
+            _grows = _gt.plan(u.registry)
+            if len(_grows) >= 5:
+                st.markdown("---")
+                st.caption(f"🌳 그때 그 소재가 박힌 듯한 지시문 "
+                           f"{len(_grows)}개")
+                for _r in _grows[:3]:
+                    st.caption(f"　{_r['directive'][:46]}")
+                if safe(st.button, "주제에서 떼어내기", key=uk("gen_trees")):
+                    with st.spinner("다듬는 중…"):
+                        _res = _gt.run(sb, u.registry, client,
+                                       log=lambda *a: None)
+                    if _res.get("rewrote"):
+                        st.success(f"{_res['rewrote']}개를 다듬었어요")
+                        for _e in _res.get("examples") or []:
+                            st.caption(f"　{_e['전']}")
+                            st.caption(f"　→ {_e['후']}")
+                        st.rerun()
+                    else:
+                        st.caption(_res.get("skip") or "바꿀 것이 없었어요")
+        except Exception:
+            pass
+
         # 🧹 안 걸어본 길에 쌓인 근거 옮기기
         try:
             import rehome_memory as _rh, curiosity_growth as _cg
