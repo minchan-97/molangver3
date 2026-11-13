@@ -953,6 +953,18 @@ with st.sidebar:
             _used = sum((u.registry.usage_count or {}).values())
             st.caption(f"🌳 사고 기억 {_tmem}개 · 늘린 판단 단계 {_grown}개 · "
                        f"트리 사용 {_used}회")
+            # **계보가 얼마나 믿을 만한가.**
+            # 경로 추적률 1.0 은 '경로가 남았나' 일 뿐이다.
+            # 이것은 '그 경로가 답과 닿아 있나' 다. 다른 질문이다.
+            try:
+                import pathcheck as _pc2
+                _ps = _pc2.summary(sb)
+                if _ps.get("n"):
+                    st.caption("　" + _pc2.describe(_ps))
+            except Exception:
+                pass
+            if st.session_state.get("_path_note"):
+                st.caption("🧭 " + st.session_state["_path_note"])
             if st.session_state.get("_tree_save_error"):
                 st.error(f"트리 저장 실패: {st.session_state['_tree_save_error'][:80]}")
         except Exception:
@@ -1601,6 +1613,22 @@ if msg or photo:
             u.identity.audit(type_id=(result["type"] if result else "vision"),
                              path=(result["path"] if result else []),
                              answer=answer)
+        except Exception:
+            pass
+        # **답이 그 길을 정말 걸었나.**
+        #
+        # 경로를 남기는 것과 그 경로를 따른 것은 다르다. 재지 않으면
+        # 계보가 '사고의 기록' 이 아니라 '사고하는 척의 기록' 이 된다.
+        # 고치지는 않는다 — 재서 남기는 자리다.
+        try:
+            if result:
+                import pathcheck as _pc
+                _pr = _pc.record(sb, result, answer)
+                if _pr.get("score") is not None and _pr["score"] < 0.34:
+                    st.session_state["_path_note"] = (
+                        f"답이 걸은 길과 거의 안 닿았어요 ({_pr['score']})")
+                else:
+                    st.session_state.pop("_path_note", None)
         except Exception:
             pass
         u.last_talk_ts = _time.time()   # 시간 동기화용
