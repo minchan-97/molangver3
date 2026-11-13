@@ -336,27 +336,57 @@ with st.sidebar:
         # 그 대화의 질문을 보여주니 "음악과 출근 상황에서…" 처럼
         # 소재가 박혀 나왔다. 다음에 다른 주제로 쓰면 지시문은 옛
         # 주제를, 답은 새 주제를 말한다 — 둘이 안 닿는다.
+        #
+        # **경로가 많은 유형부터, 바뀐 것만 보여준다.**
+        # 86개를 하나하나 보는 것은 무리다. 그런데 상위 셋이 전체
+        # 경로의 81% 다. 거기만 봐도 효과의 대부분을 가져간다.
         try:
             import generalize_trees as _gt
-            _grows = _gt.plan(u.registry)
-            if len(_grows) >= 5:
+            _gcand = _gt.plan(u.registry, top_types=3)
+            if len(_gcand) >= 3:
                 st.markdown("---")
-                st.caption(f"🌳 그때 그 소재가 박힌 듯한 지시문 "
-                           f"{len(_grows)}개")
-                for _r in _grows[:3]:
-                    st.caption(f"　{_r['directive'][:46]}")
-                if safe(st.button, "주제에서 떼어내기", key=uk("gen_trees")):
+                _gtypes = {}
+                for _r in _gcand:
+                    _gtypes[_r["tree"]] = _r["walked"]
+                st.caption("🌳 소재가 박힌 듯한 지시문 "
+                           f"{len(_gcand)}개 · "
+                           + ", ".join(f"{k}({v}건)"
+                                       for k, v in list(_gtypes.items())[:3]))
+
+                if safe(st.button, "다듬어 보기", key=uk("gen_try")):
                     with st.spinner("다듬는 중…"):
-                        _res = _gt.run(sb, u.registry, client,
-                                       log=lambda *a: None)
-                    if _res.get("rewrote"):
-                        st.success(f"{_res['rewrote']}개를 다듬었어요")
-                        for _e in _res.get("examples") or []:
-                            st.caption(f"　{_e['전']}")
-                            st.caption(f"　→ {_e['후']}")
-                        st.rerun()
+                        st.session_state["_gen_plan"] = _gt.propose(
+                            u.registry, client, top_types=3,
+                            log=lambda *a: None)
+
+                _gplan = st.session_state.get("_gen_plan")
+                if _gplan is not None:
+                    if not _gplan:
+                        st.caption("　바꿀 것이 없었어요 "
+                                   "(이미 주제에서 떨어져 있어요)")
                     else:
-                        st.caption(_res.get("skip") or "바꿀 것이 없었어요")
+                        st.caption(f"　바뀐 것 {len(_gplan)}개 — "
+                                   "둘 수 있는 것만 고르세요")
+                        with st.form(key=uk("gen_form")):
+                            _gmark = []
+                            for _i, _d in enumerate(_gplan):
+                                st.caption(f"[{_d['tree'][:18]}]")
+                                st.caption(f"　전: {_d['directive'][:70]}")
+                                st.caption(f"　후: {_d['new'][:70]}")
+                                _gmark.append(
+                                    st.checkbox("이걸로 바꾸기", value=True,
+                                                key=uk(f"gen_{_i}")))
+                            _gok = st.form_submit_button("고른 것 반영",
+                                                         type="primary")
+                        if _gok:
+                            _take = [d for d, m in zip(_gplan, _gmark) if m]
+                            _res = _gt.run(sb, u.registry, client,
+                                           picked=_take,
+                                           log=lambda *a: None)
+                            st.session_state.pop("_gen_plan", None)
+                            st.success(f"{_res.get('rewrote', 0)}개를 "
+                                       "주제에서 떼어냈어요")
+                            st.rerun()
         except Exception:
             pass
 
