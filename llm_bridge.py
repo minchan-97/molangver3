@@ -237,6 +237,90 @@ def detect_shared_info(user_message: str,
 
 
 # ── 새 유형 사고 트리 생성 (extract_reasoning_pattern을 LLM으로) ──
+def _degeneralize(directive: str, question: str) -> str:
+    """
+    지시문에서 **그때 그 소재**를 걷어낸다.
+
+    질문에만 있고 일반적인 사고 절차에는 없을 낱말이 지시문에
+    들어 있으면, 그건 이 한 번의 대화에 묶인 말이다.
+    트리는 다시 쓰이므로 그런 말은 빼야 한다.
+    """
+    import re as _re
+    if not directive:
+        return directive
+    # 사고 절차에 쓰이는 흔한 말은 소재가 아니다
+    KEEP = {"감정", "상황", "이유", "근거", "기준", "차이", "관계", "대상",
+            "맥락", "의도", "결론", "방향", "대화", "상대", "사용자",
+            "생각", "기억", "경험", "의미", "부분", "내용", "질문"}
+    # 조사를 떼고 견준다. '음악' 과 '음악과' 가 다른 말이 되면
+    # 질문에 있는 소재인데도 못 알아본다.
+    _JOSA = _re.compile(r"(은|는|이|가|을|를|의|에|도|만|과|와|로|으로|"
+                        r"에게|에서|부터|까지|라는|이라는|에선|한테)$")
+
+    def _stem(w):
+        if len(w) <= 2:
+            return w
+        c = _JOSA.sub("", w)
+        return c if len(c) >= 2 else w
+
+    qw = {_stem(w) for w in _re.findall(r"[가-힣A-Za-z]{2,}", question or "")}
+    qw = {w for w in qw if w not in KEEP and len(w) >= 2}
+
+    out = directive
+    for w in sorted(_re.findall(r"[가-힣A-Za-z]{2,}", directive),
+                    key=len, reverse=True):
+        if _stem(w) in qw:
+            out = out.replace(w, "그것")
+    # '그것과 그것을' 처럼 겹치면 읽히지 않는다 — 한 번만 남긴다
+    out = _re.sub(r"(그것\s*){2,}", "그것 ", out)
+    return out.strip() or directive
+
+
+def _generalize_steps(client, model, steps: list, question: str) -> list:
+    """
+    지시문에서 **그때 그 소재를 걷어낸다.**
+
+    트리는 한 번 만들어 여러 번 다시 쓰인다. 그런데 만들 때 질문을
+    보여주니 "음악과 출근 상황에서 느끼는 감정을 분석한다" 같은
+    지시가 나왔다. 다음에 다른 주제로 그 유형을 쓰면 지시문은 옛
+    주제를, 답은 새 주제를 말한다 — 둘이 안 닿는다.
+
+    실제로 쟀더니 답이 걸은 길과 닿는 정도가 0.26 이었고 61%는
+    아예 안 닿았다. **경로는 남는데 그 경로를 따랐다고 보기 어려운**
+    상태였다. 유형이 새로 생길 때만 도므로 비용은 적다.
+    """
+    import json as _json
+    bodies = [s.get("directive") or "" for s in steps]
+    if not any(bodies):
+        return steps
+    try:
+        r = client.chat.completions.create(
+            model=model, temperature=0.0, max_tokens=320,
+            messages=[{"role": "user", "content":
+                       "아래는 사고 절차의 단계별 지시문입니다. 이 절차는 "
+                       "앞으로 **다른 주제에도 다시 쓰입니다.**\n"
+                       "각 지시문에서 **특정 소재·고유명사·이번 질문에만 "
+                       "해당하는 말**을 걷어내고, 어떤 주제에도 맞는 말로 "
+                       "바꾸세요. 단계의 뜻과 순서는 그대로 두세요.\n\n"
+                       "나쁜 예: 음악과 출근 상황에서 느끼는 감정을 분석한다\n"
+                       "좋은 예: 상대가 말한 상황에서 어떤 감정이 걸리는지 짚는다\n\n"
+                       "지시문:\n"
+                       + "\n".join(f"{i+1}. {b}" for i, b in enumerate(bodies))
+                       + "\n\nJSON 배열만 출력: [\"바꾼 지시문1\", ...]"}])
+        t = r.choices[0].message.content.strip()
+        t = t.replace("```json", "").replace("```", "").strip()
+        fixed = _json.loads(t)
+        if isinstance(fixed, list) and len(fixed) == len(steps):
+            for s, nb in zip(steps, fixed):
+                if isinstance(nb, str) and nb.strip():
+                    s["directive"] = nb.strip()
+    except Exception:
+        # 실패하면 규칙으로라도 한 번 — 아무것도 안 하는 것보다 낫다
+        for s in steps:
+            s["directive"] = _degeneralize(s.get("directive") or "", question)
+    return steps
+
+
 def make_tree_designer(client, model: str = "gpt-4o-mini"):
     """
     새 유형이 감지되면, LLM이 그 유형에 맞는 판단 단계(트리)를 설계.
@@ -246,10 +330,27 @@ def make_tree_designer(client, model: str = "gpt-4o-mini"):
     import json as _json
 
     def design_fn(question: str, type_hint: str = ""):
+        # **지금 주제를 지시문에 박지 않는다.**
+        #
+        # 트리는 한 번 만들어 **여러 번 다시 쓰인다.** 그런데 만들 때
+        # 질문을 통째로 보여주니, "사용자가 언급한 **음악과 출근
+        # 상황**에서 느끼는 감정을 분석한다" 같은 지시가 나왔다.
+        # 다음에 다른 주제로 그 유형을 쓰면 지시문은 옛 주제를
+        # 말하고 답은 새 주제를 말한다 — 둘이 안 닿는다.
+        #
+        # 실제로 쟀더니 답이 걸은 길과 닿는 정도가 0.26 이었고,
+        # 61%는 아예 안 닿았다. 경로는 남는데 **그 경로를 따랐다고
+        # 보기 어려운** 상태였다.
         prompt = (
             f"질문: \"{question}\"\n\n"
             f"이 질문에 답하려면 어떤 '판단 단계'를 거쳐야 하는지 사고 절차를 설계하세요.\n"
-            f"2~3개의 순차적 판단 단계로 나누고, 각 단계에 구체적 지시를 쓰세요.\n"
+            f"2~3개의 순차적 판단 단계로 나누고, 각 단계에 구체적 지시를 쓰세요.\n\n"
+            f"**아주 중요** — 이 절차는 비슷한 다른 질문에도 다시 쓰입니다.\n"
+            f"그러니 directive 에 **이 질문의 소재를 절대 넣지 마세요.**\n"
+            f"  나쁜 예: \"음악과 출근 상황에서 느끼는 감정을 분석한다\"\n"
+            f"  좋은 예: \"상대가 말한 상황에서 어떤 감정이 걸리는지 짚는다\"\n"
+            f"고유명사·구체적 소재 대신 '상대가 말한 것', '지금 다루는 것' "
+            f"처럼 자리를 비워 두세요.\n"
             f"JSON만 출력 (설명 없이):\n"
             f'{{"type_id": "유형이름(영문소문자)", '
             f'"steps": [{{"name": "단계명", "directive": "이 단계에서 할 구체적 지시"}}]}}\n\n'
@@ -267,6 +368,14 @@ def make_tree_designer(client, model: str = "gpt-4o-mini"):
             t = t.replace("```json", "").replace("```", "").strip()
             data = _json.loads(t)
             if "type_id" in data and "steps" in data and data["steps"]:
+                # 그래도 소재가 박혀 나오면 **한 번 더 다듬는다.**
+                #
+                # 낱말을 걷어내는 규칙으로는 한계가 뚜렷했다.
+                # '출근했는데' 에서 '출근' 을 뽑아내려면 형태소 분석이
+                # 필요하고, 그걸 넣을 바에는 LLM 에게 한 번 더 맡기는
+                # 편이 낫다 (유형이 새로 생길 때만이라 비용도 적다).
+                data["steps"] = _generalize_steps(
+                    client, model, data["steps"], question)
                 return data
         except Exception:
             pass
