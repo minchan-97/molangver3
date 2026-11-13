@@ -362,6 +362,11 @@ with st.sidebar:
                 _gplan = st.session_state.get("_gen_plan")
                 if _gplan is not None:
                     if not _gplan:
+                        # 바꿀 것이 없었다 — 그 사실도 남겨야 다음에
+                        # 또 후보로 올라오지 않는다 (run 이 저장한다)
+                        _gt.run(sb, u.registry, client, picked=[],
+                                log=lambda *a: None)
+                        st.session_state.pop("_gen_plan", None)
                         st.caption("　바꿀 것이 없었어요 "
                                    "(이미 주제에서 떨어져 있어요)")
                     else:
