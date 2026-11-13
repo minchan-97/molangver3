@@ -103,7 +103,8 @@ def score(answer: str, tree, path: list) -> dict:
 
     aw = _words(answer)
     if not aw:
-        return {"n": len(steps), "hit": 0, "score": 0.0, "why": "답이 비었다"}
+        return {"n": len(steps), "hit": 0, "score": 0.0,
+                "why": "답이 비었다", "answer_words": []}
 
     hits, detail = 0, []
     for s in steps:
@@ -113,11 +114,17 @@ def score(answer: str, tree, path: list) -> dict:
         shared = aw & sw
         ok = bool(shared)
         hits += 1 if ok else 0
-        detail.append({"step": s.split()[0], "touched": sorted(shared)[:4]})
+        # **무엇과 견줬는지 남긴다.**
+        # 점수만 남기면 왜 0 인지 영영 알 수 없다. 실제로 0 이
+        # 이어졌을 때 추측만 하게 됐다.
+        detail.append({"step": s.split()[0],
+                       "text": s[:90],
+                       "touched": sorted(shared)[:4]})
 
     n = max(1, len([s for s in steps if _words(s)]))
     val = round(hits / n, 3)
     return {"n": n, "hit": hits, "score": val, "detail": detail,
+            "answer_words": sorted(aw)[:12],
             "why": ("길을 따랐다" if val >= 0.5
                     else "길과 답이 거의 안 닿는다" if val == 0
                     else "일부만 닿는다")}
