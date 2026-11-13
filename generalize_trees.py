@@ -91,7 +91,7 @@ def _mostly_korean(t: str) -> bool:
     return (k / (k + a)) >= 0.6 if (k + a) else False
 
 
-def plan(registry, only_used: bool = True) -> list:
+def plan(registry, only_used: bool = True, top_types: int = 0) -> list:
     """
     무엇을 고칠지. 바꾸기 전에 눈으로 볼 수 있게.
 
@@ -102,9 +102,23 @@ def plan(registry, only_used: bool = True) -> list:
     only_used=True 면 **실제로 걸어본 유형만** 본다. 안 쓰는 것을
     고치는 데 LLM 을 쓸 이유가 없다.
     """
+    trees = (getattr(registry, "trees", {}) or {})
+
+    # **경로가 많은 유형부터.**
+    #
+    # 85개를 하나하나 보는 것은 무리다. 그런데 실제로는 쏠려 있다 —
+    # emotion_analysis 292건, inference 73건, conditional_chain 46건…
+    # 상위 다섯이 전체의 9할이다. 거기만 손봐도 효과의 대부분을
+    # 가져가고, 볼 것은 열댓 개로 준다.
+    order = sorted(trees.items(),
+                   key=lambda kv: -len(getattr(kv[1], "history", None) or []))
+    if top_types:
+        order = order[:top_types]
+
     out = []
-    for tid, tree in (getattr(registry, "trees", {}) or {}).items():
-        if only_used and not (getattr(tree, "history", None) or []):
+    for tid, tree in order:
+        walked = len(getattr(tree, "history", None) or [])
+        if only_used and not walked:
             continue
         for nid, node in (getattr(tree, "nodes", {}) or {}).items():
             d = getattr(node, "directive", "") or ""
@@ -115,9 +129,10 @@ def plan(registry, only_used: bool = True) -> list:
             # 한계가 뚜렷했다).
             hits = looks_specific(d)
             if len(hits) >= 2:
-                out.append({"tree": tid, "node": nid,
+                out.append({"tree": tid, "node": nid, "walked": walked,
                             "directive": d, "specific": hits})
-    out.sort(key=lambda r: -len(r["specific"]))
+    # 많이 걸은 유형이 먼저 — 고칠 값어치가 큰 쪽이다
+    out.sort(key=lambda r: (-r["walked"], -len(r["specific"])))
     return out
 
 
@@ -196,11 +211,29 @@ def apply(registry, done: list, log=print) -> int:
     return n
 
 
-def run(sb, registry, client, log=print) -> dict:
-    rows = plan(registry)
+def propose(registry, client, top_types: int = 5, log=print) -> list:
+    """
+    **다듬어 보기만 한다. 아직 고치지 않는다.**
+
+    바뀐 것만 돌려주므로, 사람이 볼 것은 실제로 달라진 것뿐이다.
+    LLM 이 "이미 일반적" 으로 판단한 것은 원문 그대로 와서 빠진다.
+    """
+    rows = plan(registry, top_types=top_types)
     if not rows:
-        return {"skip": "소재가 박힌 지시문이 없다"}
-    done = rewrite(client, rows, log=log)
+        return []
+    return rewrite(client, rows, log=log)
+
+
+def run(sb, registry, client, picked: list = None,
+        top_types: int = 5, log=print) -> dict:
+    """
+    picked 를 주면 **그것만** 고친다 (사람이 고른 것).
+    안 주면 다듬은 것을 전부 고친다.
+    """
+    done = picked if picked is not None else propose(
+        registry, client, top_types=top_types, log=log)
+    if not done:
+        return {"skip": "바꿀 것이 없다"}
     n = apply(registry, done, log=log)
     if n:
         try:
@@ -208,7 +241,4 @@ def run(sb, registry, client, log=print) -> dict:
             registry_store.save(sb, registry)
         except Exception:
             pass
-    return {"found": len(rows), "rewrote": n,
-            "examples": [{"전": d["directive"][:50], "후": d["new"][:50]}
-                         for d in done[:4]],
-            "at": time.time()}
+    return {"rewrote": n, "at": time.time()}
