@@ -27,6 +27,27 @@ import json
 import pickle
 
 
+def _node_from(v: dict):
+    """
+    dict 에서 JudgmentNode 를 되살린다.
+
+    **dataclass 가 모르는 열쇠는 따로 붙인다.**
+    `_directive_ok` 처럼 나중에 붙인 표시가 들어오면
+    JudgmentNode(**v) 가 통째로 터진다. 표시 하나 때문에 트리가
+    통째로 안 복원되는 일은 없어야 한다.
+    """
+    known = {"id", "prompt", "directive", "is_terminal"}
+    node = JudgmentNode(**{k: v[k] for k in known if k in v})
+    for k, x in v.items():
+        if k not in known:
+            try:
+                setattr(node, k, x)
+            except Exception:
+                pass
+    return node
+
+
+
 @dataclass
 class JudgmentNode:
     """판단 노드 — 하나의 의미 있는 판단 지점."""
@@ -478,7 +499,7 @@ class ThoughtStructure:
             blob = pickle.load(f)
         ts = cls(learning_rate=blob["lr"], continuity=blob["continuity"])
         for k, v in blob["nodes"].items():
-            ts.nodes[k] = JudgmentNode(**v)
+            ts.nodes[k] = _node_from(v)
         ts.transitions = blob["transitions"]
         ts.root_id = blob["root_id"]
         ts.history = [PathRecord(**r) for r in blob["history"]]
