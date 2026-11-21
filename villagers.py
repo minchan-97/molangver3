@@ -157,6 +157,25 @@ def walk(sb, who: dict, vil: dict, rng=None, log=print) -> dict:
         pass
     if not places:
         return {}
+
+    # **몰랑이와 피우피우도 사람이다.**
+    #
+    # 끌림을 셀 때 이웃(미피·슈야·토야)만 세고 있었다. 그래서
+    # 몰랑이네는 늘 '아무도 없는 집' 으로 계산됐고, 쓸쓸한 이웃은
+    # ×6 으로 **서로에게만** 당겨졌다. 슈야·토야는 70% 붙어 다니니
+    # 셋이 자기들끼리 뭉치고, 몰랑이는 그 셈 밖에 있었다.
+    # 몰랑이만 센다. 피우피우는 대개 그 옆이라 둘로 세면 과하게
+    # 당겨진다 (하루 23번까지 몰려와, 이웃들끼리 지내는 시간이 줄었다).
+    # 하나로 세면 몰랑이네가 **여느 자리 한 곳만큼** 끌린다.
+    here_too = {}
+    try:
+        import home as _hm
+        _out = (_hm.load(sb).get("outside") or {})
+        _p = (_out.get("molang") or {}).get("place") or "몰랑이네"
+        here_too[_p] = 1
+    except Exception:
+        pass
+
     moved = {}
     for name, v in who.items():
         p = PEOPLE.get(name) or {}
@@ -169,7 +188,12 @@ def walk(sb, who: dict, vil: dict, rng=None, log=print) -> dict:
         been = set((v.get("been") or []))
         fresh = [x for x in cand if x not in been]
         if fresh and rng.random() < 0.6:
-            cand = fresh
+            # **아는 집은 빼지 않는다.**
+            # 안 가본 곳만 남기면 늘 가본 몰랑이네가 영영 후보에서
+            # 빠진다. 새것이 끌리는 건 맞지만, 그게 아는 사이를
+            # 끊어서는 안 된다.
+            cand = fresh + [x for x in cand
+                            if x in ("몰랑이네",) and x not in fresh]
         if name == "미피":
             # 미피는 집에서 먼 데는 안 간다.
             # **다만 쓸쓸하면 멀어도 간다.** 아기라고 혼자 두는 것은
@@ -193,7 +217,7 @@ def walk(sb, who: dict, vil: dict, rng=None, log=print) -> dict:
         # (미피가 혼자 작업실에 남아 있던 것을 이것이 푼다)
         try:
             import feelings as _fl
-            crowd = {}
+            crowd = dict(here_too)          # 몰랑이·피우피우부터 센다
             for _n2, _v2 in who.items():
                 if _n2 != name and _v2.get("where"):
                     crowd[_v2["where"]] = crowd.get(_v2["where"], 0) + 1
