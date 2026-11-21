@@ -60,18 +60,30 @@ def from_outing(ident, land: dict, went, log=print) -> bool:
     """
     바깥에 다녀온 일.
     **처음 간 곳**과 **자주 간 곳**만 적는다. 매번 적으면 이동 기록이 된다.
+
+    **두 군데가 어긋나 한 건도 안 쌓이고 있었다.**
+      1) land.maybe_go 가 주는 것은 {"place": {"kind": …}, "first": …}
+         인데 여기서는 went.get("kind") 를 봤다 — 늘 None 이었다.
+      2) 방문 수는 자리마다가 아니라 land["visits"][이름] 에 쌓인다.
+         p.get("visits") 는 늘 0 이라, kind 를 바로 줬어도 안 걸렸다.
+      그래서 수십 번 다녀오도록 "바다에 처음 가봤다" 가 한 건도 없었다.
+
+    마을 자리(빵집·음악방)도 센다. land["places"] 에는 없지만
+    visits 에는 쌓인다 — 다녀온 것은 다녀온 것이다.
     """
-    kind = (went.get("kind") if isinstance(went, dict) else went)
+    kind = went
+    if isinstance(went, dict):
+        kind = went.get("kind")
+        if not kind:
+            p = went.get("place")
+            kind = p.get("kind") if isinstance(p, dict) else p
     if not kind:
         return False
-    for p in (land.get("places") or []):
-        if p.get("kind") != kind:
-            continue
-        n = int(p.get("visits") or 0)
-        if n == 1:
-            return _add(ident, f"몰랑이는 {kind}에 처음 가봤다.", "land", log)
-        if n == MIN_VISITS_FOR_FACT:
-            return _add(ident, f"몰랑이는 {kind}에 자주 간다.", "land", log)
+    n = int((land.get("visits") or {}).get(kind) or 0)
+    if n == 1:
+        return _add(ident, f"몰랑이는 {kind}에 처음 가봤다.", "land", log)
+    if n == MIN_VISITS_FOR_FACT:
+        return _add(ident, f"몰랑이는 {kind}에 자주 간다.", "land", log)
     return False
 
 
