@@ -710,8 +710,11 @@ def main(mode):
                 pass
             state.last_qe = float((out.get('topology') or
                                    out.get('topology_night') or {}).get('mean_qe', 0) or 0)
+            # 바깥에 나가 있던 회차면 **그 자리의 자극**도 같이 넘긴다.
+            # 전에는 out['land']['stim'] 을 만들어 놓고 로그로만 찍었다.
+            _stim = (out.get('land') or {}).get('stim') or None
             out['mood'] = _mood.feel(store.sb, _SI(store.sb), state,
-                                     events=_ev, texts=_texts)
+                                     events=_ev, texts=_texts, stim=_stim)
             out['mood_bias'] = _mood.bias(out['mood'])
         except Exception as e:
             out['mood'] = {'error': str(e)[:120]}
