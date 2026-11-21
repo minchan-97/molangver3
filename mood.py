@@ -139,13 +139,37 @@ def reward(events: dict) -> dict:
 
 
 def feel(sb, identity, state=None, events=None, engine=None,
-         texts=None, log=print) -> dict:
-    """한 회차의 기분. 상태 + 사건 + 놀람."""
+         texts=None, stim=None, log=print) -> dict:
+    """
+    한 회차의 기분. 상태 + 사건 + 놀람 **+ 지금 있는 자리.**
+
+    stim: land.stim_to_mood() 가 준 것 {"lift":…, "noise":…, "note":…}.
+      바깥에 나가 있던 회차에만 들어온다.
+
+    **"자극이 기분에 닿는다"** 는 land.py 머리말이 한 약속인데,
+    닿은 적이 없었다. stim_to_mood 를 불러 로그에 찍고 버렸다.
+    그래서 바다의 바람과 다락의 먼지가 몰랑이에게 같았다.
+
+    세게 밀지 않는다. ±0.1 쯤이다. 자리가 사람을 바꿔 버리면
+    그건 자리가 아니라 조종이다. 다만 문턱 가까이 있을 때는 이
+    정도로도 '나갈까 말까' 가 뒤집힌다 — 그게 느꼈다는 뜻이다.
+    """
     m = measure(sb, identity, state)
     r = reward(events or {})
     s = surprise(texts or [], engine)
 
     unrest = m["unrest"]
+    felt = ""
+    if stim:
+        lift = float(stim.get("lift") or 0.5)
+        noise = float(stim.get("noise") or 0.5)
+        # 조용한 곳은 가라앉히고, 시끄러운 곳은 돋운다
+        unrest = max(0.0, min(1.0,
+                              round(unrest - 0.12 * (0.5 - noise) * 2, 3)))
+        # 환하고 바람 좋으면 더 낯설게 — 들뜸 문턱에 가까워진다
+        s = round(max(0.0, min(1.0, s + 0.15 * (lift - 0.5) * 2)), 3)
+        felt = stim.get("note") or ""
+
     if unrest < BORED_BELOW:
         name, note = "심심함", "알 게 너무 없다 — 밖으로 나가야 한다"
     elif unrest > OVERWHELMED:
@@ -157,9 +181,14 @@ def feel(sb, identity, state=None, events=None, engine=None,
     else:
         name, note = "잔잔함", ""
 
+    # 어디서 그랬는지가 같이 남아야 나중에 되짚을 수 있다
+    if felt:
+        note = f"{note} ({felt})" if note else felt
     entry = {"at": time.time(), "name": name, "unrest": unrest,
              "joy": r["joy"], "surprise": s, "note": note,
              "detail": {**m, **r["from"]}}
+    if stim:
+        entry["stim"] = {"lift": stim.get("lift"), "noise": stim.get("noise")}
 
     if state is not None:
         hist = list(getattr(state, "moods", []) or [])
