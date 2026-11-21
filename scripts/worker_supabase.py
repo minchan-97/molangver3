@@ -775,8 +775,11 @@ def main(mode):
             try:    # 지도에 새로 생긴 자리를 붙인다 (이미 놓인 건 그대로)
                 import atlas as _atl
                 out['atlas'] = _atl.rebuild(store.sb)
-            except Exception:
-                pass
+            except Exception as e:
+                # **삼키지 않는다.** 전에는 pass 라, 지도가 몇 달
+                # 비어 있어도 '새 자리 0곳' 과 구별이 안 됐다.
+                print(f"  ⚠️ 지도 갱신 실패: {type(e).__name__}: {e}")
+                out['atlas'] = {'error': str(e)[:120]}
 
             try:    # 벡터로 그린 지도 — **나란히** 둔다 (덮어쓰지 않는다)
                 import semantic_map_v as _smv
