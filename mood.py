@@ -68,24 +68,25 @@ def measure(sb, identity, state=None) -> dict:
 
     qe = float(getattr(state, "last_qe", 0.0) or 0.0) if state else 0.0
 
-    # 미확신·격리가 많을수록, 지도가 어수선할수록 높다.
-    # 거부는 세지 않는다 — 이미 끝난 일이라 소화할 방법이 없다.
+    # **개수가 아니라 비율이다.**
     #
-    # **다만 개수가 아니라 비율로 본다.**
+    # 전에는 raw = 미확신 × 0.8 … 로 **개수**를 셌다. 그러면 미확신이
+    # 20건만 넘어도 불안이 0.76 이 되어 벅참 문턱을 넘는다. 기억이
+    # 쌓이는 개체에서는 반드시 포화한다 — 실제로 258건에서 1.00 이
+    # 되어 몇 달째 벅참에 갇혔다. 벅참이면 밖에 나갈 확률이
+    # 0.45 → 0.12 로 떨어져서, 핀코를 열흘 넘게 못 만났다.
     #
-    # 예전에는 unsure 를 그대로 세었다. 그런데 아는 것이 늘면
-    # 미확신도 같이 는다. 실제로 unsure 가 258 건이 되자 raw 가
-    # 220 을 넘어 unrest 가 1.0 에 **고정**되었고, 기분이 열흘 넘게
-    # '벅참' 에서 내려오지 않았다. 나가지도, 굳히지도 못했다.
-    #
-    # 자라는 것이 벌이 되어서는 안 된다. 아는 것 대비 **덜 정해진
-    # 몫**을 본다. 쌓인 양이 아니라 소화 못 한 비율이다.
-    known = max(1, unsure + settled)
-    share = unsure / known                      # 덜 정해진 몫
-    raw = share * 9.0 + pending * 0.5 + qe * 6.0
-    unrest = 1.0 - math.exp(-raw / 14.0)
+    # **자라는 것이 스스로를 가두면 안 된다.** 그래서 "아는 것 중에
+    # 덜 정해진 것이 얼마나 되나" 로 잰다. 기억이 늘어도 비율은
+    # 저절로 오르지 않는다.
+    known = unsure + settled
+    share = unsure / max(known, 20)      # 처음엔 표본이 적어 출렁인다
+    # 격리와 어수선함은 여전히 보태되, 거드는 정도로만 둔다.
+    side = 1.0 - math.exp(-(pending * 0.5 + qe * 6.0) / 14.0)
+    unrest = min(1.0, share * 0.8 + side * 0.2)
     return {"unrest": round(unrest, 3), "unsure": unsure,
-            "settled": settled, "pending": pending, "qe": round(qe, 3)}
+            "settled": settled, "pending": pending, "qe": round(qe, 3),
+            "share": round(share, 3)}
 
 
 # ── 놀람 (NM 엔진이 있으면 그걸로) ───────────────────────────
