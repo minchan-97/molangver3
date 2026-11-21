@@ -42,6 +42,47 @@ LIFT_NEW = 0.30           # 처음 가본 곳
 LIFT_COOL = 0.18
 LIFT_MAX = 0.8
 
+# ── 몸과 감각 ────────────────────────────────────────────
+# 지금까지 이웃들에게는 몸이 없었다. 미피는 아기인데 슈야와 몸이
+# 같았고, 빵집에 가도 냄새가 없었다. 같은 자리가 모두에게 똑같으면
+# 그건 자리가 아니라 좌표다.
+#
+# 몰랑이의 집(home.BODY / home.fit)이 이미 이렇게 한다 — 막지 않고
+# **느낌만 다르게** 한다. 같은 규칙을 이웃에게도 준다.
+BODY = {"미피": 0.3, "슈야": 0.6, "토야": 0.6}   # 아기는 작다
+
+# 각자 어떤 자극에 끌리나. 양수는 끌리고 음수는 밀린다.
+# 성격(villagers.PEOPLE)과 어긋나지 않게 맞춘다.
+SENSE = {
+    "미피": {"소리": 0.45, "밝기": 0.30},   # 신나는 데, 사람 소리 나는 데
+    "슈야": {"냄새": 0.55, "밝기": 0.15},   # 굽는 냄새 쪽으로
+    "토야": {"소리": -0.40, "밝기": 0.20},  # 조용하고 환한 데
+}
+SENSE_JOY = 0.10          # 제 결에 맞는 자리면 이만큼 더 기쁘다
+WIDE_LIFT = 0.12          # 작은 몸이 트인 데서 두리번거린다
+NOISE_COMPANY = 0.4       # 사람 소리가 나면 덜 쓸쓸하다
+
+
+def _stim(place: str) -> dict:
+    try:
+        import village as V
+        return V.stim(place) or {}
+    except Exception:
+        return {}
+
+
+def match(name: str, place: str) -> float:
+    """
+    그 자리가 이 사람의 결에 얼마나 맞나. -1 ~ +1 쯤.
+    맞으면 기쁘고 더 끌린다. 안 맞아도 못 가지는 않는다.
+    """
+    s = _stim(place)
+    if not s:
+        return 0.0
+    pref = SENSE.get(name) or {}
+    v = sum(w * (s.get(k, 0.5) - 0.5) * 2 for k, w in pref.items())
+    return round(max(-1.0, min(1.0, v)), 3)
+
 
 def blank() -> dict:
     return {"lonely": 0.0, "joy": 0.0, "lift": 0.0,
@@ -87,6 +128,8 @@ def tick(who: dict, byplace: dict = None, log=None) -> dict:
         f = of(v)
         here = v.get("where")
 
+        sm = _stim(here)
+
         if n in together:
             # 누굴 만났다 — 쓸쓸함이 풀리고 기뻐진다
             f["lonely"] = max(0.0, f["lonely"] - LONELY_MEET)
@@ -96,7 +139,12 @@ def tick(who: dict, byplace: dict = None, log=None) -> dict:
             # 혼자다 — 마지막으로 만난 뒤 얼마나 지났나
             gap = (now - float(f.get("last_met") or 0)) / 3600 \
                 if f.get("last_met") else 2.0
-            f["lonely"] = min(1.5, f["lonely"] + LONELY_PER_H * min(6.0, gap))
+            # **시끄러운 데서는 덜 쓸쓸하다.** 아무도 없어도 소리가
+            # 있으면 혼자인 것과 다르다 (음악방·놀이터).
+            # 조용한 데서는 혼자인 것이 더 또렷해진다 (도서관·별보는터).
+            alone = 1.0 - NOISE_COMPANY * (sm.get("소리", 0.5) - 0.5) * 2
+            f["lonely"] = min(1.5, f["lonely"]
+                              + LONELY_PER_H * min(6.0, gap) * alone)
 
         # 처음 온 곳이면 들뜬다
         if here:
@@ -105,10 +153,22 @@ def tick(who: dict, byplace: dict = None, log=None) -> dict:
                 been.append(here)
                 f["been"] = been[-20:]
                 f["lift"] = min(LIFT_MAX, f["lift"] + LIFT_NEW)
+            # **작은 몸은 트인 데서 두리번거린다.** 바람이 통하고
+            # 환한 자리가 작은 몸에는 더 크게 느껴진다.
+            if BODY.get(n, 0.5) <= 0.35 and sm:
+                open_ = (sm.get("밝기", .5) * .5 + sm.get("바람", .5) * .5)
+                if open_ >= 0.7:
+                    f["lift"] = min(LIFT_MAX, f["lift"] + WIDE_LIFT)
 
         # 좋아하는 자리면 조금 기쁘다
         if here and _likes(v, here):
             f["joy"] = min(1.5, f["joy"] + JOY_FIT)
+        # **제 결에 맞는 자극이면 더.** 슈야는 빵 냄새에, 토야는
+        # 고요에, 미피는 소리에. 안 맞으면 조금 식는다.
+        if here:
+            mt = match(n, here)
+            if mt:
+                f["joy"] = max(0.0, min(1.5, f["joy"] + SENSE_JOY * mt))
 
         # 기쁨도 들뜸도 식는다 — 안 그러면 한 번 오르고 영영 안 내려간다
         f["joy"] = max(0.0, round(f["joy"] - JOY_COOL, 3))
@@ -164,6 +224,25 @@ def pull(v: dict, place: str, crowd: int, been: bool) -> float:
     # 기쁘면 그 자리에 더 머문다
     if f["joy"] >= 0.5 and place == v.get("where"):
         w *= 1.0 + min(0.6, f["joy"])
+    # **몸이 끌리는 쪽.** 슈야는 빵 냄새 쪽으로, 토야는 조용한 쪽으로.
+    # 사람 끌림(최대 ×6)보다 약하게 둔다 — 냄새가 외로움을 이기면
+    # 안 되니까. 0.4 ~ 1.6 쯤이다.
+    # 0.3 으로 뒀더니 슈야가 빵집에 5.8%→6.3% 로만 갔다.
+    # 약하게 당기면 소용이 없다 — 사람 끌림에서 이미 겪었다.
+    # 0.9 는 너무 세다 (미피가 별보는터에 3.6% 밖에 안 갔다).
+    nm = (v or {}).get("name")
+    if nm:
+        w *= 1.0 + 0.6 * match(nm, place)
+    # **비가 오면 지붕 밑이 끌린다.**
+    # 밝기만 바꿔서는 아무 일도 안 일어났다 — 어두운 걸 좋아하는 쪽과
+    # 싫어하는 쪽이 서로 지웠다. 젖는 것은 취향이 아니라 몸이다.
+    # 그래도 막지는 않는다. 비 오는 날 언덕에 오르는 일도 있다.
+    try:
+        import sky as _sk
+        if _sk.wet() and not _sk.indoor(place):
+            w *= 0.45
+    except Exception:
+        pass
     return round(w, 3)
 
 
