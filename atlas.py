@@ -163,24 +163,38 @@ def rebuild(sb, log=print) -> dict:
     """
     지도를 세운다. **이미 놓인 것은 건드리지 않는다.**
     새로 생긴 곳만 빈자리에 붙인다.
+
+    **실패를 삼키지 않는다.**
+      전에는 마을과 바깥을 각각 except 로 감싸고 0 으로 돌려놨다.
+      그러면 몇 번을 실패해도 "새 자리 0곳" 과 구별이 안 된다.
+      한쪽이 깨져도 다른 쪽은 놓되, 무엇이 왜 안 됐는지는 남긴다.
     """
     a = load(sb)
+    err = {}
     try:
         import village as V
         nv = place_village(a, V.load(sb))
-    except Exception:
-        nv = 0
+    except Exception as e:
+        nv, err["village"] = 0, f"{type(e).__name__}: {e}"[:120]
     try:
         import land as L
         nl = place_land(a, L.load(sb))
-    except Exception:
-        nl = 0
+    except Exception as e:
+        nl, err["land"] = 0, f"{type(e).__name__}: {e}"[:120]
+    saved = True
     if nv or nl:
-        save(sb, a)
+        saved = save(sb, a)
+        if not saved:
+            err["save"] = "저장 실패 — 다음 회차에 다시 붙인다"
         if log:
             log(f"  🗺️ 지도에 새 자리 {nv + nl}곳 "
-                f"(마을 {nv} · 바깥 {nl})")
-    return {"spots": len(a.get("spots") or {}), "new": nv + nl}
+                f"(마을 {nv} · 바깥 {nl})" + ("" if saved else " — 저장 실패"))
+    if err and log:
+        log("  ⚠️ 지도: " + " · ".join(f"{k} {v}" for k, v in err.items()))
+    out = {"spots": len(a.get("spots") or {}), "new": nv + nl}
+    if err:
+        out["error"] = err
+    return out
 
 
 def distance(a: dict, p: str, q: str) -> float:
