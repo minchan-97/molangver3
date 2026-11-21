@@ -163,48 +163,56 @@ def maybe_go(land: dict, state, mood_entry: dict = None, rng=None,
         for name, p in (village.get("places") or {}).items():
             if name.endswith("네"):
                 continue
+            # 자리마다 다르다. 전에는 마을 자리를 전부 같은 값으로
+            # 뭉뚱그렸다 — 빵집의 냄새와 도서관의 고요가 같았다.
+            try:
+                import village as _vgs
+                _st = _vgs.stim(name)
+            except Exception:
+                _st = {}
             places.append({
                 "kind": name, "dist": 2.5, "zone": "village",
-                # 마을 자리는 가깝고 사람이 있다 — 환하고 조금 시끄럽다
-                "stim": {"밝기": 0.7, "소리": 0.6, "바람": 0.3, "냄새": 0.5}})
+                "stim": _st or {"밝기": 0.7, "소리": 0.6,
+                                "바람": 0.3, "냄새": 0.5}})
 
     if not places:
         return None
 
-    # **기분마다 나가고 싶은 정도가 다르다.**
-    #
-    # 예전에는 심심함·들뜸 둘만 알고 나머지는 전부 0.25 였다.
-    # 그런데 기분은 다섯 가지고(mood.feel), 실제로 '벅참' 이 열흘
-    # 넘게 이어졌다. 그동안 200 회 중 145 회를 안 나갔다.
-    #
-    # 벅참은 "덜 정해진 게 많다" 는 뜻이지 "집에만 있어라" 가 아니다.
-    # 머리가 복잡하면 오히려 바람을 쐬기도 한다. 낮게 두되 멈추지는
-    # 않게 한다.
     name = (mood_entry or {}).get("name")
-    urge = {"심심함": 0.75, "들뜸": 0.60, "잔잔함": 0.45,
-            "뿌듯함": 0.45, "벅참": 0.35}.get(name, 0.40)
-
-    # **오래 안 나갔으면 그만큼 더 나가고 싶다.**
-    # 어떤 기분이든 며칠을 집에만 있으면 답답하다.
+    urge = {"심심함": 0.75, "들뜸": 0.5}.get(name, 0.25)
+    # 비나 눈이 오는 날은 덜 나간다. 막지는 않는다 —
+    # 심심하면 비를 맞고도 나가는 게 몰랑이다.
     try:
-        _last = max((e.get("at") or 0)
-                    for e in (land.get("log") or [])
-                    if e.get("what") == "다녀옴")
-        _days = (time.time() - _last) / 86400
-        urge = min(0.9, urge + 0.12 * min(4.0, _days))
-    except (ValueError, TypeError):
-        urge = min(0.9, urge + 0.3)      # 기록이 없으면 한 번도 안 나갔다
-
+        import sky as _sk0
+        if _sk0.wet():
+            urge *= 0.6
+    except Exception:
+        pass
     if rng.random() > urge:
         return None
+
+    # 지금 하늘. 밤이면 바깥이 어둡고, 비가 오면 빗소리가 난다.
+    # 자리는 그대로 두고 **그 자리가 지금 어떤가**만 바뀐다.
+    try:
+        import sky as _sky
+        _now = _sky.now()
+    except Exception:
+        _sky, _now = None, None
 
     visits = land.get("visits") or {}
     scored = []
     for p in places:
         been = visits.get(p["kind"], 0)
+        if _sky is not None:
+            p = {**p, "stim": _sky.apply(p.get("stim"), p["kind"], _now)}
         fresh = 1.0 / (1.0 + been)          # 처음 가는 곳이 끌린다
         reach = 1.0 / (1.0 + p["dist"] / 6.0)   # 먼 곳은 어렵다
-        scored.append((fresh * reach * (1.0 + rng.random() * 0.3), p))
+        # **지금 기분이 어떤 자극을 찾게 한다.**
+        # 전에는 '처음 가본 곳인가'와 '먼가'만 봤다. 그래서 바다의
+        # 바람과 다락의 먼지가 똑같았다 — 자극을 적어 놓고 아무
+        # 결정에도 안 썼다. 금지가 아니라 가중치로만 둔다.
+        scored.append((fresh * reach * _sway(p.get("stim"), name)
+                       * (1.0 + rng.random() * 0.3), p))
     scored.sort(key=lambda x: -x[0])
     place = scored[0][1]
 
@@ -220,11 +228,17 @@ def maybe_go(land: dict, state, mood_entry: dict = None, rng=None,
             words = _vg.CAN_GROW.get(place["kind"]) or [place["kind"]]
         except Exception:
             words = [place["kind"]]
+    # **환한 곳은 눈에 더 들어온다.** 집이 이미 이렇게 한다
+    #   (home.tick: far *= 0.85 + 0.3 * stim["lift"]).
+    # 바깥에만 이 줄이 없어서, 어둑한 숲과 환한 들판에서 같은 만큼
+    # 배웠다. 나갔는데 어디였는지가 안 남으면 나간 뜻이 없다.
+    lift = (stim_to_mood({"stim": place.get("stim")}) or {}).get("lift", 0.5)
+    sense = 0.85 + 0.3 * lift
     bumped = []
     for w in words[:3]:
         old = float((state.interests or {}).get(w, 0.0))
         state.interests[w] = max(0.0, min(5.0, old + VISIT_WEIGHT *
-                                          (1.8 if first else 1.0)))
+                                          (1.8 if first else 1.0) * sense))
         bumped.append(w)
 
     land.setdefault("log", []).append(
@@ -234,6 +248,28 @@ def maybe_go(land: dict, state, mood_entry: dict = None, rng=None,
         + (" (처음)" if first else "") + f" · 거리 {place['dist']}")
     return {"place": place, "first": first, "bumped": bumped,
             "stim": place["stim"]}
+
+
+def _sway(stim: dict, mood_name: str = None) -> float:
+    """
+    지금 기분이 어떤 자극을 찾게 하나. 1.0 이 보통, 0.7~1.6.
+
+      심심하거나 들뜨면   환하고 바람 부는 쪽
+      벅차면              조용한 쪽
+
+    몰랑이가 벅차면 '굳히기' 로 기우는 것과 같은 방향이다
+    (mood.bias). 몸이 가는 곳도 같이 기울어야 한 사람이다.
+    """
+    s = stim or {}
+    if not s or not mood_name:
+        return 1.0
+    lift = (s.get("밝기", .5) * .4 + s.get("바람", .5) * .3
+            + s.get("냄새", .5) * .3)
+    if mood_name in ("심심함", "들뜸"):
+        return round(0.7 + 0.9 * lift, 3)
+    if mood_name == "벅참":
+        return round(0.7 + 0.9 * (1.0 - s.get("소리", .5)), 3)
+    return 1.0
 
 
 def stim_to_mood(out: dict) -> dict:
